@@ -1,10 +1,43 @@
 import os
 import sys
 import time
+import json
 import requests
+import subprocess
 import google.auth
 import google.auth.transport.requests
 from google import genai
+
+def get_oidc_token(audience: str) -> str:
+    """Helper to retrieve an OIDC ID token for authenticating with private Cloud Run."""
+    try:
+        from google.auth import impersonated_credentials
+        from google.auth.transport.requests import Request
+        import google.auth
+
+        source_credentials, project_id = google.auth.default()
+        target_principal = f"mcp-build-sa@{project_id}.iam.gserviceaccount.com"
+        
+        # Create the impersonated access token credentials first
+        impersonated_creds = impersonated_credentials.Credentials(
+            source_credentials=source_credentials,
+            target_principal=target_principal,
+            target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        
+        # Create the ID token credentials
+        id_token_creds = impersonated_credentials.IDTokenCredentials(
+            impersonated_creds,
+            target_audience=audience,
+            include_email=True
+        )
+        
+        # Fetch the token
+        id_token_creds.refresh(Request())
+        return id_token_creds.token
+    except Exception as e:
+        print(f"Warning: Failed to retrieve OIDC token for audience {audience}: {e}")
+        return None
 
 # =====================================================================
 # MANDATORY SDK & MODEL WARNINGS (As required by Gemini platform guidelines)
@@ -72,13 +105,26 @@ def create_custom_agent():
         "Content-Type": "application/json; charset=utf-8"
     }
     
-    # Define the MCP tool pointing to our public tunnel.
+    # Define the MCP tool pointing to our public tunnel or Cloud Run service.
     # The platform will securely route tool calls to this URL.
     mcp_tool = {
-        "type": "mcp",
+        "type": "mcp_server",
         "name": "local-system-monitor",
         "url": mcp_url
     }
+    
+    # If deploying to a private Cloud Run service, we must attach an OIDC token for authentication
+    if "run.app" in mcp_url:
+        from urllib.parse import urlparse
+        parsed = urlparse(mcp_url)
+        audience = f"{parsed.scheme}://{parsed.netloc}"
+        print(f"Private Cloud Run URL detected. Attempting to fetch OIDC token for audience: {audience}")
+        token = get_oidc_token(audience)
+        if token:
+            mcp_tool["headers"] = {
+                "Authorization": f"Bearer {token}"
+            }
+            print("Successfully attached OIDC authentication token to MCP tool configuration.")
     
     payload = {
         "id": AGENT_ID,
