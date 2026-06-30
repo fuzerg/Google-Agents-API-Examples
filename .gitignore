@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+
+# Google Cloud SDK (local installation if any)
+google-cloud-sdk/
+
+# Python cache
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Generated reports
+*.pdf
+
+# Agent platform local configs/logs
+.agents/
