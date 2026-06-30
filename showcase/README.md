@@ -101,3 +101,34 @@ This showcase contains three examples. Each example has its own dedicated direct
 *   **Polymorphic Content Handling**: The `extract_text_from_content` helper function safely handles polymorphic content blocks returned by the server, extracting text whether it is returned as a `Content` object (with `.parts`) or a `TextContent` object (with `.text`).
 *   **Event-Driven Streaming**: The streaming loop in `code_optimizer.py` listens for `step.delta` events to print text and sandbox execution logs in real-time, which is much simpler and more efficient than polling.
 *   **Secure Hybrid MCP**: The platform securely routes tool requests to the specified MCP server and guarantees header confidentiality by only sending custom headers/tokens to that URL.
+
+---
+
+## Developer Tips: Installing Gemini Agent Skills
+
+If you are using an AI coding assistant (like Antigravity) to develop, debug, or extend these examples, you can install the platform's official API skills into your workspace. This equips your AI assistant with deep, up-to-date knowledge of the Control Plane (Managed Agents API) and the Data Plane (Interactions API), helping it write correct code and avoid common pitfalls.
+
+To install the skills in your workspace, run the following commands from your workspace root:
+
+```bash
+# Create the local customizations directory if it doesn't exist
+mkdir -p .agents/skills
+
+# Clone the official skills repository sparsely
+git clone --depth 1 --filter=blob:none --sparse https://github.com/google/skills.git temp_skills_clone
+cd temp_skills_clone
+
+# Retrieve the Interactions and Agents API skills
+git sparse-checkout set skills/cloud/gemini-interactions-api skills/cloud/gemini-agents-api
+
+# Copy them to your workspace's local .agents/skills directory
+cp -r skills/cloud/gemini-interactions-api ../.agents/skills/gemini-interactions-api
+cp -r skills/cloud/gemini-agents-api ../.agents/skills/gemini-agents-api
+
+# Clean up the temporary clone
+cd ..
+rm -rf temp_skills_clone
+```
+
+Once installed, your AI assistant will automatically discover and load these skills at the start of your conversations.
+
