@@ -1,0 +1,37 @@
+id: github-code-optimizer-showcase
+base_agent: antigravity-preview-05-2026
+description: "A showcase agent that retrieves code from GitHub, benchmarks and optimizes it in the Cloud Sandbox, and opens a PR with performance results."
+tools:
+  - type: code_execution
+environment:
+  type: "remote"
+  sources:
+    - type: "gcs"
+      source: "gs://${GCS_BUCKET}/github_automation"
+      target: "/.agents/skills/github_automation"
+  network:
+    allowlist:
+      - domain: "*"
+examples:
+  - title: "Optimize fibonacci.py"
+    prompt: |
+      Optimize fibonacci.py.
+
+      Repository details:
+      - Repository Owner: fuzerg
+      - Repository Name: Slow-Code-Example
+
+  - title: "Optimize find_duplicates.py"
+    prompt: |
+      Optimize find_duplicates.py.
+
+      Repository details:
+      - Repository Owner: fuzerg
+      - Repository Name: Slow-Code-Example
+  - title: "Optimize data_aggregation.py"
+    prompt: |
+      Optimize data_aggregation.py.
+
+      Repository details:
+      - Repository Owner: fuzerg
+      - Repository Name: Slow-Code-Example
