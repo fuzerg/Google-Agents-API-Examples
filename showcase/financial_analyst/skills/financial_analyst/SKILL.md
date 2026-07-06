@@ -1,35 +1,28 @@
 # Financial Analyst Skill: Yahoo Finance & PDF Generation
 
-You have access to two custom Python helper modules located in your workspace at `/workspace/skills/financial_analyst/`:
+You have access to two custom Python helper modules located in your workspace at `/.agents/skills/financial_analyst/scripts/`:
 1.  `stock_helper.py`: Exposes `get_stock_data(ticker)` which returns a dictionary of real-time stock metrics (price, previous close, exchange, currency) from Yahoo Finance.
 2.  `pdf_helper.py`: Exposes `generate_pdf_report(filename, report_data)` which generates a beautiful, formatted PDF report and saves it to the specified filename.
 
 ### How to use these helpers:
 1.  Write a Python script that imports them.
-2.  You **must** add the skill directory to your Python path before importing:
+2.  You **must** add the skill scripts directory to your Python path before importing:
     ```python
     import sys
-    sys.path.append('/workspace/skills/financial_analyst')
+    sys.path.append('/.agents/skills/financial_analyst/scripts')
     import stock_helper
     import pdf_helper
     ```
-3.  Execute your script using your `code_execution` tool to fetch the stock data and write the PDF report (e.g., saving it to `/workspace/report.pdf`).
-4.  Once the PDF is successfully generated, read the PDF file, encode it in **base64**, and print it to stdout wrapped in `__PDF_START__` and `__PDF_END__` markers. This allows the client script to extract and save the PDF locally:
-    ```python
-    import base64
-    with open("/workspace/report.pdf", "rb") as f:
-        print("__PDF_START__")
-        print(base64.b64encode(f.read()).decode())
-        print("__PDF_END__")
-    ```
+3.  Execute your script using your `code_execution` tool to fetch the stock data and write the PDF report, saving it to the output path specified by your system instructions (e.g. `/workspace/output/financial_report.pdf`).
+4.  You **do not** need to encode the PDF to base64 or print it to stdout. The output directory is a GCS Fuse mount, and any files saved there are automatically synced to the cloud.
 
 ### Example Python Script to Run in Sandbox:
 ```python
+import os
 import sys
-sys.path.append('/workspace/skills/financial_analyst')
+sys.path.append('/.agents/skills/financial_analyst/scripts')
 import stock_helper
 import pdf_helper
-import base64
 
 # 1. Fetch stock data
 goog_data = stock_helper.get_stock_data("GOOG")
@@ -47,14 +40,13 @@ report_data = {
     "recommendation": "..." # Your detailed buy/sell recommendation
 }
 
-# 3. Generate PDF
-pdf_helper.generate_pdf_report("/workspace/report.pdf", report_data)
+# 3. Determine the output path from your instructions (e.g. /workspace/output/financial_report.pdf)
+output_path = "/workspace/output/financial_report.pdf"
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-# 4. Stream PDF back as base64
-with open("/workspace/report.pdf", "rb") as f:
-    print("__PDF_START__")
-    print(base64.b64encode(f.read()).decode())
-    print("__PDF_END__")
+# 4. Generate PDF report directly to the output GCS mount
+pdf_helper.generate_pdf_report(output_path, report_data)
+print(f"PDF report successfully saved to {output_path}")
 ```
 
-Always follow this pattern to fetch Yahoo Finance data and return the final report as a PDF.
+Always follow this pattern to fetch Yahoo Finance data and write the final report directly to the target output path.

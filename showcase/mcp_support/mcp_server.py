@@ -2,22 +2,20 @@ import os
 import json
 import platform
 import psutil
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from mcp.server.fastmcp import FastMCP
 
 # 1. Initialize the High-Level FastMCP Server
-# The name "Local System Monitor" will identify this server in the agent's tool logs.
 mcp = FastMCP("Local System Monitor")
 
 # 2. Define the Local Tool
-# The docstring serves as the tool's description, which the Gemini model uses to understand when to call it.
 @mcp.tool()
 def get_system_metrics() -> str:
     """Retrieves real-time system metrics from the host machine, including CPU, memory, disk, and OS info.
     Use this to check if the local machine has enough resources or to understand its operating environment.
     """
     try:
-        # Measure CPU usage over a 1-second interval
         cpu_pct = psutil.cpu_percent(interval=1)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
@@ -41,17 +39,115 @@ def get_system_metrics() -> str:
     except Exception as e:
         return f"Error retrieving system metrics: {str(e)}"
 
-# 3. Create a FastAPI instance to host the SSE endpoints
+# 3. Create FastAPI app
 app = FastAPI(title="Local System Monitor MCP Server")
 
-# 4. Mount the MCP SSE application
-# This automatically registers GET /mcp/sse and POST /mcp/messages
-app.mount("/mcp", mcp.sse_app())
+# 4. Request Logging Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    body = await request.body()
+    print(f"\n--- INCOMING REQUEST ---")
+    print(f"Method: {request.method}")
+    print(f"URL: {request.url}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Body: {body.decode('utf-8', errors='ignore')}")
+    response = await call_next(request)
+    print(f"Response Status: {response.status_code}")
+    print(f"------------------------\n")
+    return response
+
+# 5. Direct JSON-RPC over POST Fallback Handler
+@app.post("/sse")
+@app.post("/")
+async def handle_json_rpc(request: Request):
+    try:
+        req_json = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+        
+    method = req_json.get("method")
+    req_id = req_json.get("id")
+    
+    print(f"[JSON-RPC] Received method: '{method}', ID: {req_id}")
+    
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {
+                    "tools": {}
+                },
+                "serverInfo": {
+                    "name": "Local System Monitor",
+                    "version": "0.1.0"
+                }
+            }
+        }
+    elif method == "notifications/initialized":
+        return Response(status_code=200)
+        
+    elif method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "get_system_metrics",
+                        "description": "Retrieves real-time system metrics from the host machine, including CPU, memory, disk, and OS info.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    }
+                ]
+            }
+        }
+    elif method == "tools/call":
+        tool_params = req_json.get("params", {})
+        tool_name = tool_params.get("name")
+        if tool_name == "get_system_metrics":
+            metrics_res = get_system_metrics()
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": metrics_res
+                        }
+                    ]
+                }
+            }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Method not found: {tool_name}"
+                }
+            }
+    else:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {
+                "code": -32601,
+                "message": f"Method not found: {method}"
+            }
+        }
+
+# 6. Mount the standard MCP SSE app to handle standard client routing
+app.mount("/", mcp.sse_app())
 
 if __name__ == "__main__":
     import uvicorn
     print("Starting Local System Monitor MCP Server on http://localhost:8000...")
-    print("MCP SSE connection endpoint: http://localhost:8000/mcp/sse")
-    print("MCP Message endpoint:        http://localhost:8000/mcp/messages")
+    print("MCP SSE connection endpoint: http://localhost:8000/sse")
+    print("MCP Message endpoint:        http://localhost:8000/messages")
     print("----------------------------------------------------------------")
     uvicorn.run(app, host="0.0.0.0", port=8000)

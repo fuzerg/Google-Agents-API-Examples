@@ -92,7 +92,7 @@ export GITHUB_TOKEN="github_pat_your_token_value_here"
     ```
 2.  Run the prober:
     ```bash
-    python3 prober.py showcase/github_code_optimizer
+    ./venv/bin/python3 showcase/prober.py showcase/github_code_optimizer
     ```
 
 3.  The agent will start streaming its progress. Once finished, you will see a success message with the URL of the created Pull Request:

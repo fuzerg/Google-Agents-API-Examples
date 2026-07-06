@@ -1,34 +1,64 @@
 # The Smart Financial Analyst
 
-This example demonstrates how to combine **server-side tools** (Google Search) and a **custom GCS-mounted skill** in an autonomous background interaction. The agent uses Google Search to find live stock prices and news, analyzes them, and uses the custom `pdf_helper` skill to generate a beautiful PDF report.
+This example demonstrates how to combine **server-side tools** (Google Search), a **custom GCS-mounted skill**, and a **GCS-mounted output path** in an autonomous background interaction. The agent uses Google Search to find live stock prices and news, analyzes them, and uses the custom `financial_analyst` skill (loading helper scripts located under `/.agents/skills/financial_analyst/scripts/`) to generate a beautiful PDF report.
 
-To handle the chunked/streamed nature of the Interactions API, the script showcases how to **concatenate all `model_output` steps** in the interaction history to reconstruct the complete response.
+---
 
-## Flow Diagram
+## How It Works
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Script as Developer Script (Client)
-    participant CP as Control Plane (GCP REST)
-    participant DP as Data Plane (Interactions API)
-    
-    Script->>CP: Create Agent "financial-analyst-showcase" with Google Search
-    CP-->>Script: Return LRO (Poll until Ready)
-    Script->>DP: Start Background Interaction: "Compare GOOG & MSFT" (with GCS Skill)
-    Note over DP: Agent runs Google Searches for prices & news, compares them
-    DP-->>Script: Returns completed interaction status
-    Script->>Script: Extract base64 PDF from history and save locally
-    Script->>CP: Delete Agent (Cleanup)
 ```
+ ┌──────────────────────┐
+ │     Local Client     │
+ │ (Unified prober.py)  │
+ └──────────┬───────────┘
+            │
+            │ (1) Creates custom agent with GCS-mounted skill + output GCS Fuse
+            │ (2) Starts background interaction: "Compare GOOG and MSFT"
+            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │                   Gemini Agent Platform                 │
+ │                                                        │
+ │  ┌──────────────────────────────────────────────────┐  │
+ │  │              Agent Container (Cloud)             │  │
+ │  │                                                  │  │
+ │  │ (3) Resolves news via Google Search tool         │  │
+ │  │ (4) Executes python script via code execution:   │  │
+ │  │     - Imports stock & PDF helpers from skill     │  │
+ │  │     - Writes final report to /workspace/output/  │  │
+ │  │                                                  │  │
+ │  └───────────────────────┬──────────────────────────┘  │
+ └──────────────────────────┼─────────────────────────────┘
+                            │
+                            │ (5) GCS Fuse automatically uploads PDF in real-time
+                            ▼
+                  ┌───────────────────┐
+                  │ GCS Output Folder │
+                  │  (GCS Bucket)     │
+                  └─────────┬─────────┘
+                            │
+                            │ (6) Downloads output PDF locally
+                            ▼
+                 ┌─────────────────────┐
+                 │ Local Output Folder │
+                 └─────────────────────┘
+```
+
+1.  **Provisioning & GCS Upload**: The prober script uploads the custom Python helper scripts (`stock_helper.py` and `pdf_helper.py`) and instructions (`SKILL.md`) to your GCS bucket.
+2.  **Custom Agent Deployment**: The Control Plane registers the agent configuration in the cloud, specifying:
+    - GCS mount `gs://[BUCKET]/financial_analyst` to `/.agents/skills/financial_analyst` (read-only skill resources).
+    - GCS mount `gs://[BUCKET]/financial_analyst/output` to `/workspace/output` (read-write output sync destination).
+3.  **Sandbox Execution**: The agent uses Google Search to fetch stock news, queries live Yahoo Finance stock prices, and writes the output PDF directly to `/workspace/output/financial_report.pdf` using GCS Fuse.
+4.  **Automatic Client Sync**: The prober script detects the GCS mount configuration in `agent.yaml`, waits for the file to finalize, and downloads it locally from Google Cloud Storage.
+
+---
 
 ## How to Run
 
 Ensure you have completed the main [setup](file:///Users/zhaofu/workspace/interactions_api/showcase/README.md#setup) first.
 
-Run the script from the `showcase` directory:
+Run the prober from the `showcase` directory:
 ```bash
-python financial_analyst/financial_analyst.py
+./venv/bin/python3 showcase/prober.py showcase/financial_analyst
 ```
 
-Upon success, the script will download and save the generated PDF report to `showcase/financial_analyst/financial_report.pdf`.
+Upon success, the script will automatically download the generated PDF report and save it to `showcase/financial_analyst/output/financial_report.pdf`.
