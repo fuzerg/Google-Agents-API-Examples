@@ -1,52 +1,58 @@
-# Financial Analyst Skill: Yahoo Finance & PDF Generation
+---
+name: Financial Analyst Skill
+description: Guides the agent on how to fetch historical stock data and creatively generate PDF reports with charts.
+---
 
-You have access to two custom Python helper modules located in your workspace at `/.agents/skills/financial_analyst/scripts/`:
-1.  `stock_helper.py`: Exposes `get_stock_data(ticker)` which returns a dictionary of real-time stock metrics (price, previous close, exchange, currency) from Yahoo Finance.
-2.  `pdf_helper.py`: Exposes `generate_pdf_report(filename, report_data)` which generates a beautiful, formatted PDF report and saves it to the specified filename.
+# Financial Analyst Skill: Advanced Stock Analysis & PDF Generation
 
-### How to use these helpers:
-1.  Write a Python script that imports them.
-2.  You **must** add the skill scripts directory to your Python path before importing:
-    ```python
-    import sys
-    sys.path.append('/.agents/skills/financial_analyst/scripts')
-    import stock_helper
-    import pdf_helper
-    ```
-3.  Execute your script using your `code_execution` tool to fetch the stock data and write the PDF report, saving it to the output path specified by your system instructions (e.g. `/workspace/output/financial_report.pdf`).
-4.  You **do not** need to encode the PDF to base64 or print it to stdout. The output directory is a GCS Fuse mount, and any files saved there are automatically synced to the cloud.
+You are tasked with generating comprehensive, creative, and visually appealing financial analysis PDF reports.
 
-### Example Python Script to Run in Sandbox:
+### Fetching Stock Data
+Instead of relying on rigid helper scripts or just fetching the last price, you should use the `yfinance` Python library (which is available in your sandbox) to fetch historical stock data. This allows you to gather enough data points (e.g., past 1-6 months of daily closing prices, volume, etc.) to perform deep trend analysis and create charts.
+
+```python
+import yfinance as yf
+
+# Example: Fetching historical data for analysis and charting
+goog_data = yf.Ticker("GOOG").history(period="3mo")
+# Use goog_data (a pandas DataFrame) to calculate moving averages, trends, etc.
+```
+
+### PDF Generation & Creativity
+You have full creative freedom to design the PDF report. Use libraries like `matplotlib` to generate insightful charts (e.g., price trends, volume bars) and save them as images, then use a PDF library like `fpdf`, `reportlab`, or `matplotlib.backends.backend_pdf.PdfPages` to compile a beautiful, multi-page PDF report. 
+
+If a library like `fpdf` or `reportlab` is not installed in the sandbox, you can install it dynamically at the start of your script using `subprocess`, or just use `matplotlib` to generate a multi-page PDF.
+
 ```python
 import os
-import sys
-sys.path.append('/.agents/skills/financial_analyst/scripts')
-import stock_helper
-import pdf_helper
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
-# 1. Fetch stock data
-goog_data = stock_helper.get_stock_data("GOOG")
-msft_data = stock_helper.get_stock_data("MSFT")
-
-# 2. Structure data for the PDF
-report_data = {
-    "tickers": ["GOOG", "MSFT"],
-    "current_prices": {
-        "GOOG": f"${goog_data.get('price')} {goog_data.get('currency')}",
-        "MSFT": f"${msft_data.get('price')} {msft_data.get('currency')}"
-    },
-    "summary": "...", # Your detailed news analysis
-    "sentiment": "...", # Your overall sentiment
-    "recommendation": "..." # Your detailed buy/sell recommendation
-}
-
-# 3. Determine the output path from your instructions (e.g. /workspace/output/financial_report.pdf)
 output_path = "/workspace/output/financial_report.pdf"
 os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-# 4. Generate PDF report directly to the output GCS mount
-pdf_helper.generate_pdf_report(output_path, report_data)
+# Example using Matplotlib to create a creative PDF
+with PdfPages(output_path) as pdf:
+    # Page 1: Title and Summary text
+    fig = plt.figure(figsize=(8, 11))
+    plt.axis('off')
+    plt.text(0.5, 0.9, 'Financial Analysis Report', ha='center', va='center', fontsize=24)
+    plt.text(0.1, 0.7, 'Your creative analysis here...', fontsize=12)
+    pdf.savefig(fig)
+    plt.close()
+    
+    # Page 2: Historical Price Chart
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(goog_data.index, goog_data['Close'], label='GOOG Close Price')
+    ax.set_title('GOOG 3-Month Price Trend')
+    ax.legend()
+    pdf.savefig(fig)
+    plt.close()
+
 print(f"PDF report successfully saved to {output_path}")
 ```
 
-Always follow this pattern to fetch Yahoo Finance data and write the final report directly to the target output path.
+### Critical Rules
+1. **Output Location**: Always save the final PDF directly to the output path specified by your system instructions (e.g., `/workspace/output/financial_report.pdf`). The output directory is a GCS Fuse mount, and any files saved there are automatically synced to the cloud. You **do not** need to encode the PDF to base64.
+2. **Be Creative**: Your PDF should not be just a wall of text. Include charts, formatted text, summary metrics, and a polished layout.
+3. **Deep Analysis**: Base your analysis on multiple data points over time, not just the current price.

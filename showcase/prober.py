@@ -101,13 +101,18 @@ def main():
     local_skills_dir = os.path.join(template_dir, 'skills')
     if os.path.exists(local_skills_dir):
         
-        # WORKAROUND: If GITHUB_TOKEN is present, write it to a .env file inside github_automation skill
-        github_skill_dir = os.path.join(local_skills_dir, 'github_automation')
-        env_file_path = None
-        if os.environ.get("GITHUB_TOKEN") and os.path.exists(github_skill_dir):
-            env_file_path = os.path.join(github_skill_dir, '.env')
-            with open(env_file_path, 'w') as f:
-                f.write(f'GITHUB_TOKEN="{os.environ.get("GITHUB_TOKEN")}"\n')
+        # Generic Secret Injection: If agent.yaml defines x-env-secrets, inject them into skill .env files
+        secrets_config = config.get("x-env-secrets", {})
+        created_env_files = []
+        for skill_name, secrets in secrets_config.items():
+            skill_dir = os.path.join(local_skills_dir, skill_name)
+            if os.path.exists(skill_dir):
+                env_path = os.path.join(skill_dir, '.env')
+                with open(env_path, 'w') as f:
+                    for secret in secrets:
+                        val = os.environ.get(secret, "")
+                        f.write(f'{secret}="{val}"\n')
+                created_env_files.append(env_path)
                 
         try:
             for skill_name in os.listdir(local_skills_dir):
@@ -125,8 +130,9 @@ def main():
                     print(f"Uploading skill files from '{skill_path}' to {bucket_url}/{skill_name}...")
                     subprocess.run([gcloud_cmd, "storage", "cp", "-r", skill_path, f"{bucket_url}/"], check=True)
         finally:
-            if env_file_path and os.path.exists(env_file_path):
-                os.remove(env_file_path)
+            for env_file in created_env_files:
+                if os.path.exists(env_file):
+                    os.remove(env_file)
 
     # 4. Control Plane: Register custom agent on Vertex AI
     LOCATION = "global"
@@ -219,39 +225,44 @@ def main():
             print(f"Interaction {i+1} finished successfully.\n")
         
         # 6. Post-processing
-        # Look for any GCS mount pointing to "/workspace/output"
-        output_gcs_path = None
+        # 6. Post-processing: Download requested output paths
+        download_targets = config.get("x-download-outputs", ["/workspace/output"])
         sources = config.get("environment", {}).get("sources", [])
         for source in sources:
-            if source.get("type") == "gcs" and source.get("target") == "/workspace/output":
-                # Note: GCS path has already had env vars expanded
+            if source.get("type") == "gcs" and source.get("target") in download_targets:
                 output_gcs_path = source.get("source")
-                break
+                target_name = os.path.basename(source.get("target").rstrip('/'))
+                local_output_dir = os.path.join(template_dir, target_name)
+                os.makedirs(local_output_dir, exist_ok=True)
                 
-        if output_gcs_path:
-            local_output_dir = os.path.join(template_dir, "output")
-            os.makedirs(local_output_dir, exist_ok=True)
-            
-            print(f"\nDownloading output files from Google Cloud Storage mount...")
-            print(f"Source: {output_gcs_path}/*")
-            print(f"Target: {local_output_dir}")
-            
-            # Wait 3 seconds for GCS Fuse background flush/sync to complete
-            time.sleep(3)
-            
-            # Copy all files from GCS output path recursively
-            res = subprocess.run(["gcloud", "storage", "cp", "-r", f"{output_gcs_path}/*", local_output_dir], capture_output=True, text=True)
-            if res.returncode == 0:
-                print(f"✨ Output files downloaded and saved locally to: {local_output_dir}")
-            else:
-                print(f"Warning: Failed to download output files from GCS: {res.stderr}")
+                print(f"\nDownloading output files from Google Cloud Storage mount...")
+                print(f"Source: {output_gcs_path}/*")
+                print(f"Target: {local_output_dir}")
+                
+                # Wait 3 seconds for GCS Fuse background flush/sync to complete
+                time.sleep(3)
+                
+                # Copy all files from GCS output path recursively
+                res = subprocess.run(["gcloud", "storage", "cp", "-r", f"{output_gcs_path}/*", local_output_dir], capture_output=True, text=True)
+                if res.returncode == 0:
+                    print(f"✨ Output files downloaded and saved locally to: {local_output_dir}")
+                else:
+                    print(f"Warning: Failed to download output files from GCS: {res.stderr}")
 
-                
-        if "__PR_URL_START__" in log_content:
-            start = log_content.find("__PR_URL_START__") + len("__PR_URL_START__")
-            end = log_content.find("__PR_URL_END__")
-            if end > start:
-                print(f"\n✨ Automated Pull Request created successfully: {log_content[start:end].strip()}")
+        # Extract and print custom messages defined in agent.yaml
+        extract_msgs = config.get("x-extract-messages", [
+            {"start": "__PR_URL_START__", "end": "__PR_URL_END__", "message": "Automated Pull Request created successfully: {}"}
+        ])
+        for ext in extract_msgs:
+            start_marker = ext.get("start")
+            end_marker = ext.get("end")
+            msg_template = ext.get("message", "Extracted: {}")
+            if start_marker in log_content and end_marker in log_content:
+                start_idx = log_content.find(start_marker) + len(start_marker)
+                end_idx = log_content.find(end_marker, start_idx)
+                if end_idx > start_idx:
+                    extracted_value = log_content[start_idx:end_idx].strip()
+                    print(f"\n✨ {msg_template.format(extracted_value)}")
 
                 
     except Exception as e:

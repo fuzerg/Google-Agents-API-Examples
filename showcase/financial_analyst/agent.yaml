@@ -1,0 +1,21 @@
+id: financial-analyst-showcase
+base_agent: antigravity-preview-05-2026
+description: "A showcase financial analyst agent with GCS-mounted stock and PDF tools."
+tools:
+  - type: google_search
+  - type: code_execution
+environment:
+  type: "remote"
+  sources:
+    - type: "gcs"
+      source: "gs://${GCS_BUCKET}/financial_analyst"
+      target: "/.agents/skills/financial_analyst"
+    - type: "gcs"
+      source: "gs://${GCS_BUCKET}/financial_analyst/output"
+      target: "/workspace/output"
+  network:
+    allowlist:
+      - domain: "*"
+examples:
+  - title: "Compare GOOG and MSFT"
+    prompt: "Compare GOOG and MSFT. Research their recent news, analyze their stock performance, and generate the PDF report."

@@ -1,0 +1,12 @@
+id: mcp-support-showcase
+base_agent: antigravity-preview-05-2026
+description: "A showcase support agent connected to a local machine via MCP."
+tools:
+  - type: mcp_server
+    name: local-system-monitor
+    url: ${MCP_SERVER_URL}
+environment:
+  type: "remote"
+examples:
+  - title: "Check System Metrics"
+    prompt: "Please check my local system metrics using your local-system-monitor tool. Analyze the CPU, memory, and disk usage, and provide a professional system health report."

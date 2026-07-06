@@ -1,6 +1,6 @@
 # The Smart Financial Analyst
 
-This example demonstrates how to combine **server-side tools** (Google Search), a **custom GCS-mounted skill**, and a **GCS-mounted output path** in an autonomous background interaction. The agent uses Google Search to find live stock prices and news, analyzes them, and uses the custom `financial_analyst` skill (loading helper scripts located under `/.agents/skills/financial_analyst/scripts/`) to generate a beautiful PDF report.
+This example demonstrates how to combine **server-side tools** (Google Search), a **custom GCS-mounted skill**, and a **GCS-mounted output path** in an autonomous background interaction. The agent uses Google Search to find live stock prices and news, analyzes them, and uses the custom `financial_analyst` skill to generate a beautiful, data-rich PDF report.
 
 ---
 
@@ -23,7 +23,7 @@ This example demonstrates how to combine **server-side tools** (Google Search), 
  │  │                                                  │  │
  │  │ (3) Resolves news via Google Search tool         │  │
  │  │ (4) Executes python script via code execution:   │  │
- │  │     - Imports stock & PDF helpers from skill     │  │
+ │  │     - Uses yfinance for historical data        │  │
  │  │     - Writes final report to /workspace/output/  │  │
  │  │                                                  │  │
  │  └───────────────────────┬──────────────────────────┘  │
@@ -43,7 +43,7 @@ This example demonstrates how to combine **server-side tools** (Google Search), 
                  └─────────────────────┘
 ```
 
-1.  **Provisioning & GCS Upload**: The prober script uploads the custom Python helper scripts (`stock_helper.py` and `pdf_helper.py`) and instructions (`SKILL.md`) to your GCS bucket.
+1.  **Provisioning & GCS Upload**: The prober script uploads the skill instructions (`SKILL.md`) to your GCS bucket.
 2.  **Custom Agent Deployment**: The Control Plane registers the agent configuration in the cloud, specifying:
     - GCS mount `gs://[BUCKET]/financial_analyst` to `/.agents/skills/financial_analyst` (read-only skill resources).
     - GCS mount `gs://[BUCKET]/financial_analyst/output` to `/workspace/output` (read-write output sync destination).

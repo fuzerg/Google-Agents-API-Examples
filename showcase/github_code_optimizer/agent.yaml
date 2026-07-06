@@ -35,3 +35,12 @@ examples:
       Repository details:
       - Repository Owner: fuzerg
       - Repository Name: Slow-Code-Example
+
+x-env-secrets:
+  github_automation:
+    - GITHUB_TOKEN
+
+x-extract-messages:
+  - start: "__PR_URL_START__"
+    end: "__PR_URL_END__"
+    message: "Automated Pull Request created successfully: {}"
