@@ -20,35 +20,24 @@ showcase/
 ├── requirements.txt            # Local development dependencies
 ├── prober.py                   # Unified Vertex AI test runner & client
 │
-├── code_optimizer/             # Showcase 1: Code Optimizer
-│   ├── agent.yaml
-│   ├── AGENTS.md
-│   └── README.md
-│
-├── financial_analyst/          # Showcase 2: Smart Financial Analyst
+├── financial_analyst/          # Showcase 1: Smart Financial Analyst
 │   ├── agent.yaml
 │   ├── AGENTS.md
 │   ├── README.md
 │   └── skills/                 # Custom GCS-mounted helper module
 │
-├── github_automation/          # Showcase 3: GitHub PR Creator
+├── github_code_optimizer/      # Showcase 2: GitHub Code Optimizer
 │   ├── agent.yaml
 │   ├── AGENTS.md
 │   ├── README.md
+│   ├── slow_code.py            # Target Python code to optimize
 │   └── skills/                 # GitHub REST API helper class
 │
-├── mcp_support/                # Showcase 4: IT Support Bot (MCP)
-│   ├── agent.yaml
-│   ├── AGENTS.md
-│   ├── README.md
-│   └── mcp_server.py           # Local system monitor server
-│
-└── github_code_optimizer/      # Showcase 5: GitHub Code Optimizer
+└── mcp_support/                # Showcase 3: IT Support Bot (MCP)
     ├── agent.yaml
     ├── AGENTS.md
     ├── README.md
-    ├── slow_code.py            # Target Python code to optimize
-    └── skills/                 # GitHub REST API helper class
+    └── mcp_server.py           # Local system monitor server
 ```
 
 ---
@@ -121,19 +110,13 @@ All examples are executed via the unified `prober.py` script from the `showcase`
 
 Refer to the individual README files in each folder for specific prerequisites (such as API tokens or hosting helper servers) before running:
 
-1.  **Code Optimizer**: [code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/code_optimizer/README.md)
-    *   *No special credentials required.*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/code_optimizer`
-2.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/financial_analyst/README.md)
+1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/financial_analyst/README.md)
     *   *Requires GCS skill mounting.*
     *   Command: `./venv/bin/python3 showcase/prober.py showcase/financial_analyst`
-3.  **GitHub PR Creator**: [github_automation/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/github_automation/README.md)
-    *   *Requires `GITHUB_PAT` and repository details (or mock setup).*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/github_automation`
-4.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/mcp_support/README.md)
+2.  **GitHub Code Optimizer**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/github_code_optimizer/README.md)
+    *   *Requires `GITHUB_TOKEN` environment variable.*
+    *   Command: `./venv/bin/python3 showcase/prober.py showcase/github_code_optimizer`
+3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/mcp_support/README.md)
     *   *Requires starting the local MCP server and exposing a tunnel.*
     *   Command: `./venv/bin/python3 showcase/prober.py showcase/mcp_support`
-5.  **GitHub Code Optimizer**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/github_code_optimizer/README.md)
-    *   *Requires `GITHUB_PAT` and repository details (or mock setup).*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/github_code_optimizer`
 
