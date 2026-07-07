@@ -53,6 +53,39 @@ showcase/
 
 ---
 
+## Unified `agent.yaml` Configuration
+
+Each showcase template relies on a declarative `agent.yaml` file that defines the agent's properties, tools, runtime environment, and test examples. The `prober.py` script automatically parses this file and uses it to provision the agent in the cloud.
+
+### Core Fields
+*   **`id`**: A unique string identifier for the agent (e.g., `financial-analyst-showcase`). The prober adds a randomized UUID suffix to prevent naming collisions.
+*   **`base_agent`**: The foundational agent model used for generation (e.g., `antigravity-preview-05-2026`).
+*   **`description`**: A human-readable description of what the agent does.
+*   **`tools`**: A list of server-managed tools granted to the agent.
+    *   Examples: `- type: google_search` or `- type: code_execution`.
+
+### Environment (`environment`)
+Configures the sandbox runtime in which the agent executes its tools (like `code_execution`).
+*   **`type`**: Usually set to `"remote"` to denote execution on cloud servers.
+*   **`sources`**: A list of external data sources to mount into the agent's execution environment.
+    *   `type`: e.g., `"gcs"` for Google Cloud Storage.
+    *   `source`: The remote path (e.g., `gs://${GCS_BUCKET}/financial_analyst`).
+    *   `target`: The absolute path where the source will be mounted inside the agent's environment (e.g., `/.agents/skills/financial_analyst`).
+*   **`network.allowlist`**: Defines network access rules for the sandbox. Example: `- domain: "*"` allows unrestricted outbound internet access.
+
+### Custom Prober Extensions (`x-` prefixed)
+These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate advanced local/remote testing workflows.
+*   **`x-output-mount`**: Specifies an absolute path inside the agent's sandbox (e.g., `/workspace/output`) where generated files (like PDFs or charts) will be saved. `prober.py` dynamically creates a unique GCS bucket folder for each example, maps it to this target during execution, and then automatically syncs all generated files back to your local workspace (`output_{example_title}`) when the interaction completes.
+*   **`x-env-secrets`**: A list of local environment variable names (e.g., `- GITHUB_TOKEN`). `prober.py` will read these variables from your host machine and securely inject them as `.env` files into any local `skills/` directories before uploading them to the cloud.
+*   **`x-extract-messages`**: A list of parsing rules to extract specific text blocks from the agent's streaming output based on `start` and `end` string markers.
+
+### Test Cases (`examples`)
+*   **`examples`**: A list of test iterations the prober will run sequentially.
+    *   `title`: A unique name for the test run (used to name local output directories).
+    *   `prompt`: The initial user input sent to the agent.
+
+---
+
 ## Setup & Prerequisites
 
 Before running the examples, ensure you have:
