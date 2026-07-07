@@ -8,7 +8,7 @@ description: Guides the agent on how to fetch historical stock data and creative
 You are tasked with generating comprehensive, creative, and visually appealing financial analysis PDF reports.
 
 ### Fetching Stock Data
-Instead of relying on rigid helper scripts or just fetching the last price, you should use the `yfinance` Python library (which is available in your sandbox) to fetch historical stock data. This allows you to gather enough data points (e.g., past 1-6 months of daily closing prices, volume, etc.) to perform deep trend analysis and create charts.
+You should use the `yfinance` Python library (which is available in your sandbox) to fetch historical stock data. This allows you to gather enough data points (e.g., past 1-6 months of daily closing prices, volume, etc.) to perform deep trend analysis and create charts.
 
 ```python
 import yfinance as yf
@@ -53,6 +53,5 @@ print(f"PDF report successfully saved to {output_path}")
 ```
 
 ### Critical Rules
-1. **Output Location**: Always save the final PDF directly to the output path specified by your system instructions (e.g., `/workspace/output/financial_report.pdf`). The output directory is a GCS Fuse mount, and any files saved there are automatically synced to the cloud. You **do not** need to encode the PDF to base64.
-2. **Be Creative**: Your PDF should not be just a wall of text. Include charts, formatted text, summary metrics, and a polished layout.
-3. **Deep Analysis**: Base your analysis on multiple data points over time, not just the current price.
+1. **Be Creative**: Your PDF should not be just a wall of text. Include charts, formatted text, summary metrics, and a polished layout.
+2. **Deep Analysis**: Base your analysis on multiple data points over time, not just the current price.

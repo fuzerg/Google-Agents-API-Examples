@@ -74,15 +74,7 @@ def main():
 
     
     with open(agent_yaml_path, 'r') as f:
-        content = f.read()
-        
-    # Expand environment variables like ${VAR} or $VAR
-    def replace_env_var(match):
-        var_name = match.group(1) or match.group(2)
-        return os.environ.get(var_name, match.group(0))
-        
-    expanded_content = re.sub(r'\$\{(\w+)\}|\$(\w+)', replace_env_var, content)
-    config = yaml.safe_load(expanded_content)
+        config = yaml.safe_load(os.path.expandvars(f.read()))
     
     agent_id = f"{config.get('id')}-{uuid.uuid4().hex[:8]}"
     base_agent = config.get('base_agent', 'antigravity-preview-05-2026')
@@ -115,166 +107,188 @@ def main():
                 created_env_files.append(env_path)
                 
         try:
+            bucket_url = f"gs://{gcs_bucket}"
+            bucket_exists = subprocess.run(["gcloud", "storage", "buckets", "describe", bucket_url], capture_output=True).returncode == 0
+            if not bucket_exists:
+                print(f"Creating GCS bucket {bucket_url}...")
+                subprocess.run(["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"], check=True)
+
             for skill_name in os.listdir(local_skills_dir):
                 skill_path = os.path.join(local_skills_dir, skill_name)
                 if os.path.isdir(skill_path):
-                    # Ensure bucket exists
-                    gcloud_cmd = "gcloud"
-                    bucket_url = f"gs://{gcs_bucket}"
-                    print(f"Checking GCS bucket {bucket_url}...")
-                    res = subprocess.run([gcloud_cmd, "storage", "buckets", "describe", bucket_url], capture_output=True)
-                    if res.returncode != 0:
-                        print(f"Creating GCS bucket {bucket_url}...")
-                        subprocess.run([gcloud_cmd, "storage", "buckets", "create", bucket_url, "--location=us"], check=True)
-                    
                     print(f"Uploading skill files from '{skill_path}' to {bucket_url}/{skill_name}...")
-                    subprocess.run([gcloud_cmd, "storage", "cp", "-r", skill_path, f"{bucket_url}/"], check=True)
+                    subprocess.run(["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"], check=True)
         finally:
             for env_file in created_env_files:
                 if os.path.exists(env_file):
                     os.remove(env_file)
 
-    # 4. Control Plane: Register custom agent on Vertex AI
-    LOCATION = "global"
-    BASE_URL = f"https://aiplatform.googleapis.com/v1beta1/projects/{project_id}/locations/{LOCATION}"
-    AGENT_RESOURCE_NAME = f"projects/{project_id}/locations/{LOCATION}/agents/{agent_id}"
-    
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json; charset=utf-8"
-    }
-    
-    agent_payload = {
-        "id": agent_id,
-        "base_agent": base_agent,
-        "description": description,
-        "system_instruction": system_instruction,
-        "tools": tools,
-        "base_environment": {
-            "type": env_config.get('type', 'remote'),
-            "sources": env_config.get('sources', []),
+        # 4. Control Plane: Register custom agent on Vertex AI
+        LOCATION = "global"
+        BASE_URL = f"https://aiplatform.googleapis.com/v1beta1/projects/{project_id}/locations/{LOCATION}"
+        AGENT_RESOURCE_NAME = f"projects/{project_id}/locations/{LOCATION}/agents/{agent_id}"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json; charset=utf-8"
         }
-    }
-    if 'network' in env_config:
-        agent_payload["base_environment"]["network"] = env_config["network"]
         
-    print(f"Registering custom agent '{agent_id}' via Control Plane...")
-    response = requests.post(f"{BASE_URL}/agents", headers=headers, json=agent_payload)
-    if response.status_code != 200 and response.status_code != 409:
-        raise Exception(f"Failed to create agent: {response.text}")
-        
-    if response.status_code == 409:
-        print(f"Agent '{agent_id}' already exists. Re-using existing agent.\n")
-    else:
-        operation = response.json()
-        operation_name = operation["name"]
-        print("Waiting for agent registration to complete...")
-        while True:
-            poll_resp = requests.get(f"https://aiplatform.googleapis.com/v1beta1/{operation_name}", headers=headers)
-            poll_data = poll_resp.json()
-            if poll_data.get("done"):
-                if "error" in poll_data:
-                    raise Exception(f"Agent registration failed: {poll_data['error']}")
-                print("Agent registered successfully and is ready!\n")
-                break
-            time.sleep(3)
+        agent_payload = {
+            "id": agent_id,
+            "base_agent": base_agent,
+            "description": description,
+            "system_instruction": system_instruction,
+            "tools": tools,
+            "base_environment": {
+                "type": env_config.get('type', 'remote'),
+                "sources": env_config.get('sources', []),
+            }
+        }
+        if 'network' in env_config:
+            agent_payload["base_environment"]["network"] = env_config["network"]
             
-    # 5. Data Plane: Start Stateful Streaming Interaction
-    try:
-        # Determine prompt input
-        examples = config.get('examples', [])
-        if len(sys.argv) > 2:
-            prompts = [sys.argv[2]]
-        elif examples:
-            prompts = [ex.get('prompt') for ex in examples if ex.get('prompt')]
+        print(f"Registering custom agent '{agent_id}' via Control Plane...")
+        response = requests.post(f"{BASE_URL}/agents", headers=headers, json=agent_payload)
+        if response.status_code != 200 and response.status_code != 409:
+            raise Exception(f"Failed to create agent: {response.text}")
+            
+        if response.status_code == 409:
+            print(f"Agent '{agent_id}' already exists. Re-using existing agent.\n")
         else:
-            prompts = ["Hello"]
-        
-        # Initialize Google Gen AI client with Enterprise credentials
-        os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "true"
-        client = genai.Client(enterprise=True, project=project_id, location=LOCATION)
-        
-        log_content = ""
-        for i, prompt in enumerate(prompts):
-            print(f"Starting Stateful Streaming Interaction (Data Plane) - Run {i+1}/{len(prompts)}...")
-            print(f"Prompt: {prompt}")
-            print("--------------------------------------------------------------------------------\n")
-            
-            response_stream = client.interactions.create(
-                agent=AGENT_RESOURCE_NAME,
-                input=prompt,
-                stream=True,
-                background=True,
-                store=True,
-                timeout=300
-            )
-
-            for event in response_stream:
-                event_type = getattr(event, "event_type", None)
-                if event_type == "step.delta":
-                    delta = event.delta
-                    delta_type = getattr(delta, "type", None)
-                    if delta_type == "text":
-                        print(delta.text, end="", flush=True)
-                        log_content += delta.text
-                    elif delta_type == "code_execution_result":
-                        print(delta.result, end="", flush=True)
-                        log_content += delta.result
-                        
-            print("\n--------------------------------------------------------------------------------")
-            print(f"Interaction {i+1} finished successfully.\n")
-        
-        # 6. Post-processing
-        # 6. Post-processing: Download requested output paths
-        download_targets = config.get("x-download-outputs", ["/workspace/output"])
-        sources = config.get("environment", {}).get("sources", [])
-        for source in sources:
-            if source.get("type") == "gcs" and source.get("target") in download_targets:
-                output_gcs_path = source.get("source")
-                target_name = os.path.basename(source.get("target").rstrip('/'))
-                local_output_dir = os.path.join(template_dir, target_name)
-                os.makedirs(local_output_dir, exist_ok=True)
-                
-                print(f"\nDownloading output files from Google Cloud Storage mount...")
-                print(f"Source: {output_gcs_path}/*")
-                print(f"Target: {local_output_dir}")
-                
-                # Wait 3 seconds for GCS Fuse background flush/sync to complete
+            operation = response.json()
+            operation_name = operation["name"]
+            print("Waiting for agent registration to complete...")
+            while True:
+                poll_resp = requests.get(f"https://aiplatform.googleapis.com/v1beta1/{operation_name}", headers=headers)
+                poll_data = poll_resp.json()
+                if poll_data.get("done"):
+                    if "error" in poll_data:
+                        raise Exception(f"Agent registration failed: {poll_data['error']}")
+                    print("Agent registered successfully and is ready!\n")
+                    break
                 time.sleep(3)
                 
-                # Copy all files from GCS output path recursively
-                res = subprocess.run(["gcloud", "storage", "cp", "-r", f"{output_gcs_path}/*", local_output_dir], capture_output=True, text=True)
-                if res.returncode == 0:
-                    print(f"✨ Output files downloaded and saved locally to: {local_output_dir}")
-                else:
-                    print(f"Warning: Failed to download output files from GCS: {res.stderr}")
-
-        # Extract and print custom messages defined in agent.yaml
-        extract_msgs = config.get("x-extract-messages", [
-            {"start": "__PR_URL_START__", "end": "__PR_URL_END__", "message": "Automated Pull Request created successfully: {}"}
-        ])
-        for ext in extract_msgs:
-            start_marker = ext.get("start")
-            end_marker = ext.get("end")
-            msg_template = ext.get("message", "Extracted: {}")
-            if start_marker in log_content and end_marker in log_content:
-                start_idx = log_content.find(start_marker) + len(start_marker)
-                end_idx = log_content.find(end_marker, start_idx)
-                if end_idx > start_idx:
-                    extracted_value = log_content[start_idx:end_idx].strip()
-                    print(f"\n✨ {msg_template.format(extracted_value)}")
-
+        # 5. Data Plane: Start Stateful Streaming Interaction
+        try:
+            # Determine prompt input
+            examples_config = config.get('examples', [])
+            if len(sys.argv) > 2:
+                examples = [{"title": "manual_run", "prompt": sys.argv[2]}]
+            elif examples_config:
+                examples = examples_config
+            else:
+                examples = [{"title": "default_run", "prompt": "Hello"}]
+            
+            # Initialize Google Gen AI client with Enterprise credentials
+            os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "true"
+            client = genai.Client(enterprise=True, project=project_id, location=LOCATION)
+            
+            import copy
+            for i, example in enumerate(examples):
+                prompt = example.get('prompt', 'Hello')
+                example_title = example.get('title', f"example_{i}")
+                safe_title = re.sub(r'[^a-zA-Z0-9_-]', '_', example_title).lower()
                 
-    except Exception as e:
-        print(f"An error occurred during interaction: {e}")
-    finally:
-        # 7. Control Plane Resource Cleanup
-        print(f"\nCleaning up: Deleting agent '{agent_id}' (Control Plane)...")
-        cleanup_resp = requests.delete(f"{BASE_URL}/agents/{agent_id}", headers=headers)
-        if cleanup_resp.status_code == 200:
-            print("Agent deleted successfully.")
-        else:
-            print(f"Failed to delete agent resource: {cleanup_resp.text}")
+                # Prepare interaction-specific environment if output_mount is present
+                sources = copy.deepcopy(env_config.get('sources', []))
+                output_mount = config.get("x-output-mount")
+                interaction_environment = None
+                if output_mount:
+                    # Create a unique GCS folder for this example
+                    example_gcs_output = f"gs://{gcs_bucket}/output_{agent_id}_{safe_title}"
+                    sources.append({
+                        "type": "gcs",
+                        "source": example_gcs_output,
+                        "target": output_mount
+                    })
+                    interaction_environment = {
+                        "type": env_config.get('type', 'remote'),
+                        "sources": sources,
+                    }
+                    if 'network' in env_config:
+                        interaction_environment["network"] = env_config["network"]
+    
+                log_content = ""
+                print(f"Starting Stateful Streaming Interaction (Data Plane) - Run {i+1}/{len(examples)}...")
+                print(f"Prompt: {prompt}")
+                print("--------------------------------------------------------------------------------\n")
+                
+                try:
+                    # Setup kwargs for interaction create
+                    create_kwargs = {
+                        "agent": AGENT_RESOURCE_NAME,
+                        "input": prompt,
+                        "stream": True,
+                        "background": True,
+                        "store": True,
+                        "timeout": 900
+                    }
+                    if interaction_environment:
+                        create_kwargs["environment"] = interaction_environment
+                        
+                    response_stream = client.interactions.create(**create_kwargs)
+    
+                    for event in response_stream:
+                        event_type = getattr(event, "event_type", None)
+                        if event_type == "step.delta":
+                            delta = event.delta
+                            delta_type = getattr(delta, "type", None)
+                            if delta_type == "text":
+                                print(delta.text, end="", flush=True)
+                                log_content += delta.text
+                            elif delta_type == "code_execution_result":
+                                print(delta.result, end="", flush=True)
+                                log_content += delta.result
+                                
+                    print("\n--------------------------------------------------------------------------------")
+                    print(f"Interaction {i+1} finished successfully.\n")
+                
+                    # Download output path
+                    if output_mount:
+                        target_name = os.path.basename(output_mount.rstrip('/'))
+                        local_output_dir = os.path.join(template_dir, f"{target_name}_{safe_title}")
+                        os.makedirs(local_output_dir, exist_ok=True)
+                        
+                        print(f"\nDownloading output files from Google Cloud Storage mount...")
+                        print(f"Source: {example_gcs_output}/*")
+                        print(f"Target: {local_output_dir}")
+                        
+                        time.sleep(3)
+                        
+                        res = subprocess.run(["gcloud", "storage", "cp", "-r", f"{example_gcs_output}/*", local_output_dir], capture_output=True, text=True)
+                        if res.returncode == 0:
+                            print(f"✨ Output files downloaded and saved locally to: {local_output_dir}")
+                        else:
+                            print(f"Warning: Failed to download output files from GCS: {res.stderr}")
+    
+                    # Extract and print custom messages defined in agent.yaml
+                    extract_msgs = config.get("x-extract-messages", [])
+                    if extract_msgs:
+                        for ext in extract_msgs:
+                            start_marker = ext.get("start")
+                            end_marker = ext.get("end")
+                            msg_template = ext.get("message", "Extracted: {}")
+                            if start_marker in log_content and end_marker in log_content:
+                                start_idx = log_content.find(start_marker) + len(start_marker)
+                                end_idx = log_content.find(end_marker, start_idx)
+                                if end_idx > start_idx:
+                                    extracted_value = log_content[start_idx:end_idx].strip()
+                                    print(f"\n✨ {msg_template.format(extracted_value)}")
+                except Exception as e:
+                    print(f"An error occurred during interaction {i+1}: {e}")
+                    
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            # 7. Control Plane Resource Cleanup
+            print(f"\nCleaning up: Deleting agent '{agent_id}' (Control Plane)...")
+            credentials.refresh(auth_req)
+            headers["Authorization"] = f"Bearer {credentials.token}"
+            cleanup_resp = requests.delete(f"{BASE_URL}/agents/{agent_id}", headers=headers)
+            if cleanup_resp.status_code == 200:
+                print("Agent deleted successfully.")
+            else:
+                print(f"Failed to delete agent resource: {cleanup_resp.text}")
 
 if __name__ == "__main__":
     main()

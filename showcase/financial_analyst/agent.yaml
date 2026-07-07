@@ -10,12 +10,15 @@ environment:
     - type: "gcs"
       source: "gs://${GCS_BUCKET}/financial_analyst"
       target: "/.agents/skills/financial_analyst"
-    - type: "gcs"
-      source: "gs://${GCS_BUCKET}/financial_analyst/output"
-      target: "/workspace/output"
   network:
     allowlist:
       - domain: "*"
+
+x-output-mount: "/workspace/output"
+
 examples:
-  - title: "Compare GOOG and MSFT"
-    prompt: "Compare GOOG and MSFT. Research their recent news, analyze their stock performance, and generate the PDF report."
+  - title: "google"
+    prompt: "Research GOOG and it's competitors. Research their recent news, analyze their stock performance, and generate the PDF report."
+  
+  - title: "semiconductor"
+    prompt: "Research high potential 3 semiconductor companies. Research their recent news, analyze their stock performance, and generate the PDF report."
