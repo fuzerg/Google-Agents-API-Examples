@@ -1,3 +1,4 @@
+# Target repository: https://github.com/fuzerg/Slow-Code-Example
 id: github-code-optimizer-showcase
 base_agent: antigravity-preview-05-2026
 description: "A showcase agent that retrieves code from GitHub, benchmarks and optimizes it in the Cloud Sandbox, and opens a PR with performance results."
