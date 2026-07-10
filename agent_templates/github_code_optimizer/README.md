@@ -86,13 +86,13 @@ export GITHUB_TOKEN="github_pat_your_token_value_here"
 
 ## Running the Example
 
-1.  Navigate to the showcase directory:
+1.  Navigate to the agent_templates directory:
     ```bash
-    cd showcase
+    cd agent_templates
     ```
 2.  Run the prober:
     ```bash
-    ./venv/bin/python3 showcase/prober.py showcase/github_code_optimizer
+    ./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer
     ```
 
 3.  The agent will start streaming its progress. Once finished, you will see a success message with the URL of the created Pull Request:

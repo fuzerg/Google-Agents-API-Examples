@@ -27,7 +27,7 @@ agents discovered through the **Managed Agents API** (Control Plane).
 
 ### Tech stack (decided up front)
 - **Backend:** FastAPI (Python), reusing the `google-genai` SDK + ADC auth
-  (same pattern as `showcase/prober.py`).
+  (same pattern as `agent_templates/prober.py`).
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS (v4).
 - **Storage:** local **SQLite**.
 - **Transport:** Server-Sent Events (SSE) from backend → browser (the

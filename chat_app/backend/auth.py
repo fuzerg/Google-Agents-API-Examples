@@ -1,6 +1,6 @@
 """Application Default Credentials (ADC) and google-genai client management.
 
-Mirrors the auth pattern used in showcase/prober.py: resolve ADC credentials,
+Mirrors the auth pattern used in agent_templates/prober.py: resolve ADC credentials,
 refresh access tokens on demand for Control Plane REST calls, and construct an
 enterprise google-genai client for the Interactions API (Data Plane).
 """

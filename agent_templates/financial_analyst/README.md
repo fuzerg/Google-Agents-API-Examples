@@ -54,11 +54,11 @@ This example demonstrates how to combine **server-side tools** (Google Search), 
 
 ## How to Run
 
-Ensure you have completed the main [setup](file:///Users/zhaofu/workspace/interactions_api/showcase/README.md#setup) first.
+Ensure you have completed the main [setup](file:///Users/zhaofu/workspace/interactions_api/agent_templates/README.md#setup) first.
 
-Run the prober from the `showcase` directory:
+Run the prober from the `agent_templates` directory:
 ```bash
-./venv/bin/python3 showcase/prober.py showcase/financial_analyst
+./venv/bin/python3 agent_templates/prober.py agent_templates/financial_analyst
 ```
 
-Upon success, the script will automatically download the generated PDF report and save it to `showcase/financial_analyst/output/financial_report.pdf`.
+Upon success, the script will automatically download the generated PDF report and save it to `agent_templates/financial_analyst/output/financial_report.pdf`.

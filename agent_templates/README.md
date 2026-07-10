@@ -15,7 +15,7 @@ Each example is housed in its own folder and contains:
 4.  **`skills/`** (Optional): Mounted custom Python helpers or instructions loaded into the agent's runtime environment.
 
 ```
-showcase/
+agent_templates/
 ├── README.md                   # This master guide
 ├── requirements.txt            # Local development dependencies
 ├── prober.py                   # Unified Vertex AI test runner & client
@@ -86,9 +86,9 @@ Before running the examples, ensure you have:
     ```
 
 ### Configure the Virtual Environment
-Navigate to the `showcase` directory and set up the virtual environment:
+Navigate to the `agent_templates` directory and set up the virtual environment:
 ```bash
-cd showcase
+cd agent_templates
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -103,20 +103,20 @@ export GCP_PROJECT="your-gcp-project-id-here"
 
 ## Running the Examples
 
-All examples are executed via the unified `prober.py` script from the `showcase` root directory:
+All examples are executed via the unified `prober.py` script from the `agent_templates` root directory:
 ```bash
-./venv/bin/python3 showcase/prober.py showcase/<example_name>
+./venv/bin/python3 agent_templates/prober.py agent_templates/<example_name>
 ```
 
 Refer to the individual README files in each folder for specific prerequisites (such as API tokens or hosting helper servers) before running:
 
-1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/financial_analyst/README.md)
+1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/financial_analyst/README.md)
     *   *Requires GCS skill mounting.*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/financial_analyst`
-2.  **GitHub Code Optimizer**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/github_code_optimizer/README.md)
+    *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/financial_analyst`
+2.  **GitHub Code Optimizer**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/github_code_optimizer/README.md)
     *   *Requires `GITHUB_TOKEN` environment variable.*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/github_code_optimizer`
-3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/showcase/mcp_support/README.md)
+    *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer`
+3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/mcp_support/README.md)
     *   *Requires starting the local MCP server and exposing a tunnel.*
-    *   Command: `./venv/bin/python3 showcase/prober.py showcase/mcp_support`
+    *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support`
 

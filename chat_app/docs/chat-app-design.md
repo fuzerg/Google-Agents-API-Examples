@@ -49,7 +49,7 @@ agents via the **Managed Agents API** (Control Plane).
 
 **Why this shape:**
 - The Interactions API already speaks SSE; the backend forwards those deltas to the browser as SSE. Minimal transformation, true token-by-token streaming.
-- FastAPI reuses the `google-genai` SDK and ADC pattern already proven in `showcase/prober.py`.
+- FastAPI reuses the `google-genai` SDK and ADC pattern already proven in `agent_templates/prober.py`.
 - The backend owns secrets/tokens and the SQLite store; the React app stays a thin client.
 
 ---
@@ -57,7 +57,7 @@ agents via the **Managed Agents API** (Control Plane).
 ## 3. Tech Stack & Dependencies
 
 ### Backend (Python 3.10+)
-- `fastapi`, `uvicorn[standard]` — API + SSE server (already in `showcase/requirements.txt`).
+- `fastapi`, `uvicorn[standard]` — API + SSE server (already in `agent_templates/requirements.txt`).
 - `google-genai >= 2.0.0` — Interactions API SDK (**legacy SDKs unsupported**).
 - `google-auth` — ADC credentials + access token for Control Plane REST.
 - `requests` — Control Plane `list agents` REST call.

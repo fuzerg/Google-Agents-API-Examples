@@ -17,5 +17,8 @@ Thumbs.db
 # Generated reports
 *.pdf
 
+# Agent template run outputs
+agent_templates/**/output*/
+
 # Agent platform local configs/logs
 .agents/

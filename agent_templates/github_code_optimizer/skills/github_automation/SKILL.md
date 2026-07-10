@@ -48,7 +48,7 @@ gh.create_branch(branch_name)
 # 3. Create or update files on that branch
 new_code = "print('Hello from the automated code example!')"
 gh.create_or_update_file(
-    path="showcase/new_example/main.py",
+    path="agent_templates/new_example/main.py",
     content=new_code,
     commit_message="Add automated hello-world script",
     branch_name=branch_name

@@ -39,7 +39,7 @@ sequenceDiagram
 This option runs the MCP server locally on your machine and exposes it via a secure SSH-based reverse tunnel.
 
 ### 1. Start the Local MCP Server
-From the `showcase` directory, start the FastAPI server hosting the MCP tool:
+From the `agent_templates` directory, start the FastAPI server hosting the MCP tool:
 ```bash
 python mcp_support/mcp_server.py
 ```
@@ -57,7 +57,7 @@ Look for the forwarded HTTPS domain in the output (e.g., `https://xxxx.lhr.life`
 In a **third terminal**, set the forwarded HTTPS URL as an environment variable and run the prober:
 ```bash
 export MCP_SERVER_URL="https://your-tunnel-subdomain.lhr.life/sse"
-./venv/bin/python3 showcase/prober.py showcase/mcp_support
+./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support
 ```
 
 The cloud agent will connect back to your local machine, run the metrics collection tool, and return a system health report!
@@ -89,7 +89,7 @@ gcloud iam service-accounts add-iam-policy-binding mcp-build-sa@YOUR_PROJECT_ID.
 *(Note: Ensure your user account also has the `roles/iam.serviceAccountTokenCreator` role on the project to allow token generation).*
 
 ### 2. Deploy the MCP Server to Cloud Run
-From the `showcase` directory, deploy the server. This will upload the source, build the image via Cloud Build, and deploy it as a private service:
+From the `agent_templates` directory, deploy the server. This will upload the source, build the image via Cloud Build, and deploy it as a private service:
 ```bash
 gcloud run deploy mcp-server \
     --source mcp_support \
@@ -102,5 +102,5 @@ gcloud run deploy mcp-server \
 Copy the **Service URL** outputted by the deployment (e.g., `https://mcp-server-xxx.run.app`), append `/sse` to it, set it as an environment variable, and run the prober:
 ```bash
 export MCP_SERVER_URL="https://mcp-server-xxx.run.app/sse"
-./venv/bin/python3 showcase/prober.py showcase/mcp_support
+./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support
 ```
