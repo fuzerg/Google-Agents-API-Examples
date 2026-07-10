@@ -22,3 +22,9 @@ agent_templates/**/output*/
 
 # Agent platform local configs/logs
 .agents/
+
+# OAuth secrets & cached tokens (workspace_chat_agent and others)
+**/client_secret*.json
+**/token.json
+**/token_local_*.json
+**/*.credentials.json

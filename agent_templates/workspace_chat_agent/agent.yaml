@@ -1,0 +1,88 @@
+id: workspace-chat-agent-showcase
+base_agent: antigravity-preview-05-2026
+
+# Model used for the stateful Interactions API turns run by test_agent.py.
+# Must be a current tool-capable model (legacy gemini-2.0 / 1.5 are unsupported).
+model: gemini-2.5-pro
+
+description: >-
+  A Google Workspace assistant that connects to Google's fully-managed remote
+  MCP servers (Gmail, Drive, Calendar, People, Chat) to read, summarize, and
+  take action across a user's Workspace on their behalf.
+
+# ---------------------------------------------------------------------------
+# Google-hosted remote Workspace MCP servers (Developer Preview).
+#
+# These endpoints are operated by Google. The Gemini Enterprise Agent Platform
+# securely routes tool calls to each URL, forwarding ONLY the per-server auth
+# headers supplied at interaction time. Each server needs a matching
+# `<service>mcp.googleapis.com` service enabled in your project and OAuth scopes
+# granted on your consent screen (see README.md).
+#
+# `enabled: false` servers are skipped by default. Google Chat needs an extra
+# Chat app configuration + a Workspace account, so it is off by default.
+# Reference: https://developers.google.com/workspace/guides/configure-mcp-servers
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: gmail
+    url: https://gmailmcp.googleapis.com/mcp/v1
+    enabled: true
+  - name: drive
+    url: https://drivemcp.googleapis.com/mcp/v1
+    enabled: true
+  - name: calendar
+    url: https://calendarmcp.googleapis.com/mcp/v1
+    enabled: true
+  - name: people
+    url: https://people.googleapis.com/mcp/v1
+    enabled: true
+  - name: chat
+    url: https://chatmcp.googleapis.com/mcp/v1
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 scopes requested for the end-user's access token, which is passed to
+# the MCP servers as `Authorization: Bearer <token>`. These MUST match the
+# scopes added to your OAuth consent screen. Defaults mirror the official
+# Workspace MCP documentation (read + Gmail drafts). Add write scopes (e.g.
+# calendar.events, gmail.modify) if you want the agent to take more actions.
+# ---------------------------------------------------------------------------
+oauth_scopes:
+  # Identity (used to display which account you authorized)
+  - openid
+  - https://www.googleapis.com/auth/userinfo.email
+  - https://www.googleapis.com/auth/userinfo.profile
+  # Gmail
+  - https://www.googleapis.com/auth/gmail.readonly
+  - https://www.googleapis.com/auth/gmail.compose
+  # Drive
+  - https://www.googleapis.com/auth/drive.readonly
+  - https://www.googleapis.com/auth/drive.file
+  # Calendar
+  - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+  - https://www.googleapis.com/auth/calendar.events.freebusy
+  - https://www.googleapis.com/auth/calendar.events.readonly
+  # People / Contacts
+  - https://www.googleapis.com/auth/directory.readonly
+  - https://www.googleapis.com/auth/contacts.readonly
+  # Google Chat (only needed if the `chat` server is enabled)
+  # - https://www.googleapis.com/auth/chat.spaces.readonly
+  # - https://www.googleapis.com/auth/chat.memberships.readonly
+  # - https://www.googleapis.com/auth/chat.messages.readonly
+  # - https://www.googleapis.com/auth/chat.messages.create
+  # - https://www.googleapis.com/auth/chat.users.readstate.readonly
+
+# Sequential prompts run by test_agent.py. Each example is an independent,
+# stateful conversation (multi-turn is supported via previous_interaction_id).
+examples:
+  - title: "who_am_i"
+    prompt: "According to my Google profile, what is my name and email address?"
+
+  - title: "inbox_triage"
+    prompt: "Search my Gmail for unread messages from the last 3 days and give me a concise, prioritized summary of what needs my attention."
+
+  - title: "next_meeting"
+    prompt: "What is my next meeting? Include the time, attendees, and any linked documents."
+
+  - title: "find_and_summarize_doc"
+    prompt: "Find the most relevant document in my Drive about project planning and summarize it in 5 bullet points."

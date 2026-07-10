@@ -1,0 +1,13 @@
+# Google Gen AI SDK (Interactions API). Must be >=2.0.0; legacy SDKs like
+# google-cloud-aiplatform / google-generativeai are NOT supported for interactions.
+google-genai>=2.0.0
+
+# ADC + user OAuth (InstalledAppFlow) for minting the Workspace access token.
+google-auth>=2.28.0
+google-auth-oauthlib>=1.2.0
+
+# Raw MCP connectivity preflight + token introspection.
+requests>=2.31.0
+
+# Parse agent.yaml.
+pyyaml>=6.0
