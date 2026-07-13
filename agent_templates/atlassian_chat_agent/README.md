@@ -191,6 +191,7 @@ you > Create a Confluence page in the TEAM space summarizing this conversation.
 | `--api-key` | Bearer-auth service-account key (else from env). |
 | `--base-agent NAME` | Override the runtime `base_agent` from agent.yaml. |
 | `--mcp-url URL` | Override the Rovo MCP endpoint. |
+| `--mcp-on-agent` | Bake the MCP server + header into the agent (self-contained; see below). |
 | `--keep-agent` | Do not delete the registered agent after the run. |
 | `--no-stream` | Disable token streaming. |
 
@@ -224,6 +225,35 @@ on every turn and never stored on the agent.
 > (`google-cloud-aiplatform`, `google-generativeai`) do not support the
 > Interactions API. Use current models only (e.g. `gemini-2.5-pro`,
 > `gemini-3-flash-preview`); `gemini-2.0`/`1.5` are unsupported.
+
+### Two integration patterns: per-interaction vs. self-contained
+
+The same `mcp_server` tool (type + name/url/headers) can be attached in **two**
+places. The choice determines whether a *generic* chat client can drive the agent.
+
+| | Per interaction (default) | On the agent — `--mcp-on-agent` (self-contained) |
+| --- | --- | --- |
+| Where the MCP tool + header live | Sent on every `interactions.create` call (Data Plane) | Baked into the agent at registration (Control Plane) |
+| Token stored on the agent | No (fresh per turn) | Yes (platform keeps it confidential to the MCP URL) |
+| Who can call the agent | Only a **bespoke client** that knows this agent's MCP config and injects it each turn | **Any** client — a turn is just `{agent, input}` |
+| Works with a unified chat app (Gemini Enterprise / Agentspace UI) | **No** — the app doesn't know to inject per-agent tools | **Yes** — the agent is self-contained |
+| Per-user identity | Each caller can pass their own token per turn | Single baked identity; for true per-user identity use the MCP server's **OAuth** instead of a static header |
+
+So: **to integrate with a unified chat front-end, register the agent with the MCP
+server baked in** (`--mcp-on-agent`) so any thin client works. Use per-interaction
+injection for programmatic/automation clients that manage per-user tokens
+themselves. `chat.py` supports both:
+
+```bash
+# Self-contained agent (register once, reuse), then a thin turn with no tools:
+./venv/bin/python3 chat.py --project YOUR_PROJECT --mcp-on-agent --keep-agent \
+  "List my Jira projects."
+```
+
+> **Tool-type gotcha (verified against the live API):** for MCP servers the
+> Control Plane accepts tool type **`mcp_server`** — the same as the Data Plane.
+> The older `type: mcp` is rejected (`Unsupported tool type: mcp. Supported: [...,
+> mcp_server, ...]`).
 
 ---
 

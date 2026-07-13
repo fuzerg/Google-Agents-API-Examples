@@ -206,14 +206,20 @@ def build_atlassian_auth_header(
 
 
 def build_mcp_tools(
-    servers: List[Dict[str, str]], auth_header: str
+    servers: List[Dict[str, str]], auth_header: str, tool_type: str = "mcp_server"
 ) -> List[Dict[str, Any]]:
-    """Turn the server list into Interactions API `mcp_server` tool specs."""
+    """Turn the server list into MCP tool specs.
+
+    The same `mcp_server` tool type + name/url/headers shape is accepted BOTH
+    per interaction (Data Plane, interactions.create) and baked into the agent
+    (Control Plane, agent create). `tool_type` is left configurable but defaults
+    to `mcp_server`; note the Control Plane rejects the older `mcp` type.
+    """
     tools = []
     for s in servers:
         tools.append(
             {
-                "type": "mcp_server",
+                "type": tool_type,
                 "name": s["name"],
                 "url": s["url"],
                 "headers": {"Authorization": auth_header},
@@ -450,15 +456,18 @@ def run_interaction(
 ) -> Tuple[str, Optional[str]]:
     """Run one turn against a registered agent. Returns (final_text, interaction_id).
 
-    The MCP `tools` (with the Atlassian auth header) are supplied turn-scoped at
-    interaction time, so the API token is never stored on the agent.
+    When `tools` is non-empty, the MCP tools (with the Atlassian auth header) are
+    supplied turn-scoped, so the token is never stored on the agent. When empty
+    (e.g. --mcp-on-agent), no tools are sent — the agent already has them baked
+    in — which is how a generic/unified chat client would call it.
     """
     kwargs: Dict[str, Any] = {
         "agent": agent_resource,
         "input": prompt,
-        "tools": tools,
         "store": True,
     }
+    if tools:
+        kwargs["tools"] = tools
     if previous_interaction_id:
         kwargs["previous_interaction_id"] = previous_interaction_id
 
@@ -540,12 +549,18 @@ def register_agent(
     base_agent: str,
     description: str,
     system_instruction: Optional[str],
+    tools: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Register a custom agent via the Control Plane and wait until it is ready.
 
     Returns the full agent resource name. This project only supports agent-based
-    interactions, so we register an agent before calling it. The MCP tools + auth
-    header are supplied later, at interaction time (never stored on the agent).
+    interactions, so we register an agent before calling it.
+
+    If `tools` is provided (MCP tools of `type: mcp`), they are baked into the
+    agent resource so the agent is self-contained: a generic/unified chat client
+    can then call it with just {agent, input} (no per-turn tools). Otherwise the
+    MCP tools + auth header are supplied per interaction (nothing stored on the
+    agent).
     """
     base = f"https://aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{LOCATION}"
     resource = f"projects/{project}/locations/{LOCATION}/agents/{agent_id}"
@@ -567,6 +582,8 @@ def register_agent(
     }
     if system_instruction:
         payload["system_instruction"] = system_instruction
+    if tools:
+        payload["tools"] = tools
 
     resp = requests.post(f"{base}/agents", headers=headers, json=payload, timeout=60)
     if resp.status_code not in (200, 409):
@@ -722,6 +739,15 @@ def main() -> int:
         help="Do not delete the registered agent after the run.",
     )
     parser.add_argument(
+        "--mcp-on-agent",
+        action="store_true",
+        help="Bake the MCP server + auth header into the AGENT at registration "
+        "(Control Plane) instead of supplying them per interaction. The agent "
+        "becomes self-contained, so a generic/unified chat client can call it "
+        "with just {agent, input} (no per-turn tools). The header is stored on "
+        "the agent resource. Pair with --keep-agent to reuse it.",
+    )
+    parser.add_argument(
         "--project",
         help="GCP project for the Interactions API (overrides GOOGLE_CLOUD_PROJECT "
         "and the ADC-resolved project).",
@@ -788,12 +814,31 @@ def main() -> int:
         err(f"Failed to init Gen AI client: {e}")
         return 1
 
-    tools = build_mcp_tools(servers, auth_header)
     stream = not args.no_stream
+    on_agent = args.mcp_on_agent
 
-    # Step 3: Register the agent (Control Plane). The MCP tools/auth header are
-    # supplied per-turn at interaction time, so no secret is stored on the agent.
+    # Two integration patterns for the MCP server + auth header:
+    #   default          -> supplied PER INTERACTION (Data Plane). Flexible and
+    #                        keeps the token off the agent, but the caller must
+    #                        know each agent's MCP config (bespoke client only).
+    #   --mcp-on-agent   -> baked into the AGENT at registration (Control Plane).
+    #                        Self-contained: a generic/unified chat client can
+    #                        call it with just {agent, input}.
+    # NOTE: The Control Plane accepts tool type `mcp_server` (not `mcp`, despite
+    # some older docs) for MCP servers baked into the agent.
+    if on_agent:
+        agent_tools = build_mcp_tools(servers, auth_header)  # type=mcp_server
+        turn_tools: List[Dict[str, Any]] = []  # thin turns, like a generic client
+    else:
+        agent_tools = None
+        turn_tools = build_mcp_tools(servers, auth_header)  # type=mcp_server
+
+    # Step 3: Register the agent (Control Plane).
     rule("Registering agent (Control Plane)")
+    info(
+        "MCP wiring: baked into the agent (Control Plane)" if on_agent
+        else "MCP wiring: supplied per interaction (Data Plane)"
+    )
     agent_id = args.agent_id or f"atlassian-chat-{uuid.uuid4().hex[:12]}"
     keep_agent = args.keep_agent
     try:
@@ -805,6 +850,7 @@ def main() -> int:
             base_agent=base_agent,
             description=config.get("description", "Atlassian chat agent."),
             system_instruction=system_instruction,
+            tools=agent_tools,
         )
         ok(f"Agent ready: {agent_resource}")
     except Exception as e:  # noqa: BLE001
@@ -814,7 +860,7 @@ def main() -> int:
     # Step 4: run interactions against the agent, then clean up.
     try:
         if args.interactive:
-            run_interactive(client, agent_resource, tools, stream)
+            run_interactive(client, agent_resource, turn_tools, stream)
             return 0
 
         if args.prompt:
@@ -824,7 +870,7 @@ def main() -> int:
                 {"title": "default", "prompt": "What can you help me with in Jira and Confluence?"}
             ]
 
-        failures = run_examples(client, agent_resource, examples, tools, stream)
+        failures = run_examples(client, agent_resource, examples, turn_tools, stream)
         rule("Done")
         if failures:
             err(f"{failures}/{len(examples)} interaction(s) failed.")
