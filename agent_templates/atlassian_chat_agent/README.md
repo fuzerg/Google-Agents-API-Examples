@@ -30,6 +30,7 @@ flow.
 | `chat.py` | Standalone runner: builds the Atlassian auth header → **registers an agent (Control Plane)** → calls it via the **Interactions API** with the MCP tool → cleans up. **Replaces prober.py for this template.** |
 | `requirements.txt` | Python dependencies. |
 | `.env.example` | Template for your Atlassian credentials (copy to `.env`; git-ignored). |
+| `demo/` | An end-to-end incident-triage demo: seeds a Confluence KB from official Kubernetes runbooks + baseline Jira bugs, then walks two use cases (file a bug from context; find the existing bug). See [demo/DEMO.md](demo/DEMO.md). |
 
 > **Interactions model note.** This project's Interactions API supports
 > **agent-based** interactions only. So `chat.py` registers an agent with
