@@ -241,6 +241,25 @@ on every turn and never stored on the agent.
   too narrow.
 - **`invalid model` / interaction errors:** pick a current model in `agent.yaml`
   or via `--base-agent`.
+- **Only 3 tools listed (`getTeamworkGraph*`) in `--list-tools`:** your token is
+  a **classic (unscoped)** API token. Rovo MCP maps each Jira/Confluence tool to
+  required scopes, so you need an **API token _with scopes_** — create one via
+  the scoped flow
+  ([id.atlassian.com …?appId=mcp&selectedScopes=all](https://id.atlassian.com/manage-profile/security/api-tokens?autofillToken&expiryDays=max&appId=mcp&selectedScopes=all))
+  and re-source `.env`. A scoped token unlocks the full toolset (~45 tools).
+- **`403 aiplatform.agents.create denied`:** an IAM / identity problem on the
+  GCP side, not Atlassian. Two common causes:
+  - **Wrong project.** The Gen AI client resolves the project from `--project`,
+    then `GOOGLE_CLOUD_PROJECT`, then the **ADC quota project** — which may differ
+    from your `gcloud config` project. Always pass `--project YOUR_PROJECT`.
+  - **Wrong ADC identity.** Client libraries use **ADC**, not your `gcloud`
+    active account. If they differ (e.g. `gcloud auth list` shows one account but
+    ADC is another), re-point ADC at the account that has a Vertex AI agent role
+    on the project:
+    ```bash
+    gcloud auth application-default login
+    gcloud auth application-default set-quota-project YOUR_PROJECT
+    ```
 
 ## Security
 
