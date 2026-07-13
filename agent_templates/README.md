@@ -18,7 +18,8 @@ Each example is housed in its own folder and contains:
 agent_templates/
 ├── README.md                   # This master guide
 ├── requirements.txt            # Local development dependencies
-├── prober.py                   # Unified Vertex AI test runner & client
+├── agentkit.py                 # Shared toolkit (auth, client, control plane, streaming, MCP)
+├── prober.py                   # Unified provisioner + single-turn example runner
 │
 ├── financial_analyst/          # Showcase 1: Smart Financial Analyst
 │   ├── agent.yaml
@@ -43,9 +44,26 @@ agent_templates/
     ├── agent.yaml
     ├── AGENTS.md
     ├── README.md
-    ├── chat.py                 # Multi-turn runner (replaces prober.py)
+    ├── chat.py                 # Interactive multi-turn chat client
     └── .env.example            # Atlassian API-token credentials template
 ```
+
+### Two runners, one shared toolkit
+
+Both runners import `agentkit.py`, which holds the shared machinery (ADC auth,
+Gen AI client init, agent register/delete on the Control Plane, streaming
+interactions + renderers, and generic MCP helpers). Each entrypoint stays thin:
+
+*   **`prober.py <template_dir>`** — the **unified provisioner + single-turn
+    example runner** for every template. It registers a *self-contained* agent
+    (baking in the template's tools, including remote MCP servers with their auth
+    headers) and runs the `examples` from `agent.yaml`. Flags: `--check` /
+    `--list-tools` (MCP preflight), `--keep-agent` (keep + print the agent id).
+*   **`atlassian_chat_agent/chat.py`** — a generic **interactive multi-turn chat
+    client**. Point it at an existing agent (`--agent <id>`) or have it provision
+    one from a template (`--from-template <dir>`), then chat. Because prober
+    registers agents self-contained, a thin client can drive them with just
+    `{agent, input}`.
 
 ---
 
@@ -127,7 +145,8 @@ Refer to the individual README files in each folder for specific prerequisites (
     *   *Requires starting the local MCP server and exposing a tunnel.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support`
 4.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
-    *   *Multi-turn agent using Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
-    *   *Uses its own `chat.py` runner instead of `prober.py`.*
+    *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
+    *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
+    *   Chat interactively: `./venv/bin/python3 agent_templates/atlassian_chat_agent/chat.py --from-template agent_templates/atlassian_chat_agent`
     *   Command: `cd agent_templates/atlassian_chat_agent && ./venv/bin/python3 chat.py --interactive`
 

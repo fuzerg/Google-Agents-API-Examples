@@ -73,11 +73,11 @@ From the template directory (`agent_templates/atlassian_chat_agent`):
 
 ## Use case 1 — report → research → file a ticket (multi-turn)
 
-Run an interactive session and send these turns:
+Run an interactive session (provisioned from this template) and send these turns:
 
 ```bash
 set -a && source .env && set +a
-../../venv/bin/python3 chat.py --project YOUR_GCP_PROJECT --interactive
+../../venv/bin/python3 chat.py --from-template . --project YOUR_GCP_PROJECT
 ```
 
 **Turn 1 (User A reports):**
@@ -113,13 +113,15 @@ steps, and links to the Confluence pages.
 
 ## Use case 2 — similar report → find the existing ticket (new conversation)
 
-Start a **fresh** run (no `--interactive` needed) so there is no shared context:
+Run it as a **fresh single-turn** interaction via prober (no shared context):
 
 ```bash
 set -a && source .env && set +a
-../../venv/bin/python3 chat.py --project YOUR_GCP_PROJECT \
+../../venv/bin/python3 ../../prober.py .. --project YOUR_GCP_PROJECT \
   "I'm on the payments team. In production our checkout-service pods are going into CrashLoopBackOff after the latest deploy. Is this already being tracked in Jira? If so, give me the ticket key, its status, and a short summary of the context and recommended debugging steps already captured on it."
 ```
+
+(Or open a fresh `chat.py --from-template . …` session and ask it as the first turn.)
 
 *Expected:* the agent searches Jira, **finds the ticket from use case 1**, and
 returns its key, status, and the captured context (symptom + kubectl debugging

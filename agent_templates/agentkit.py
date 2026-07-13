@@ -1,0 +1,659 @@
+#!/usr/bin/env python3
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Shared toolkit for the agent-template runners (`prober.py`, `chat.py`).
+
+This module holds the code both runners need so it lives in exactly one place:
+
+  * ADC auth + GCP project resolution
+  * Enterprise Gen AI client initialization (Interactions API)
+  * agent.yaml / AGENTS.md loading
+  * Control Plane: register / delete a custom agent (with LRO polling)
+  * Data Plane: run a streaming (or synchronous) interaction, with pluggable
+    renderers (`SimpleRenderer` for plain runners, `RichRenderer` for chat)
+  * Generic MCP helpers: build an Authorization header from an `auth` block,
+    turn `mcp_servers` into tool specs, and a raw MCP connectivity preflight
+
+The two entrypoints stay thin and keep only their unique behavior:
+`prober.py` (GCS/skills, x-* extensions, single-turn examples) and `chat.py`
+(interactive multi-turn chat against a given / template-provisioned agent).
+
+NOTE: Use the unified Google Gen AI SDK (`google-genai >= 2.0.0`). Legacy SDKs
+(`google-cloud-aiplatform`, `google-generativeai`) do NOT support interactions.
+Use current models only (`gemini-2.5-pro`, `gemini-3-flash-preview`, ...);
+`gemini-2.0`/`1.5` are unsupported.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import sys
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
+LOCATION = "global"
+MCP_PROTOCOL_VERSION = "2025-06-18"
+DEFAULT_BASE_AGENT = "antigravity-preview-05-2026"
+CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+
+
+# ---------------------------------------------------------------------------
+# ANSI helpers (no external deps).
+# ---------------------------------------------------------------------------
+class C:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    CYAN = "\033[36m"
+
+
+def c(text: str, color: str) -> str:
+    if not sys.stdout.isatty():
+        return text
+    return f"{color}{text}{C.RESET}"
+
+
+def info(msg: str) -> None:
+    print(c(msg, C.CYAN))
+
+
+def ok(msg: str) -> None:
+    print(c("\u2713 " + msg, C.GREEN))
+
+
+def warn(msg: str) -> None:
+    print(c("! " + msg, C.YELLOW))
+
+
+def err(msg: str) -> None:
+    print(c("\u2717 " + msg, C.RED))
+
+
+def rule(title: str = "") -> None:
+    line = "-" * 80
+    if title:
+        print(f"\n{c(line, C.DIM)}\n{c(title, C.BOLD)}\n{c(line, C.DIM)}")
+    else:
+        print(c(line, C.DIM))
+
+
+def mask(secret: str, keep: int = 4) -> str:
+    if not secret:
+        return "<empty>"
+    if len(secret) <= keep:
+        return "*" * len(secret)
+    return secret[:keep] + "*" * (len(secret) - keep)
+
+
+# ---------------------------------------------------------------------------
+# Auth + client.
+# ---------------------------------------------------------------------------
+def resolve_adc(scopes: Tuple[str, ...] = (CLOUD_PLATFORM_SCOPE,)):
+    """Return (credentials, project_id) from Application Default Credentials."""
+    import google.auth
+
+    credentials, project_id = google.auth.default(scopes=list(scopes))
+    return credentials, project_id
+
+
+def access_token(credentials) -> str:
+    """Refresh and return an access token string for the given ADC credentials."""
+    from google.auth.transport.requests import Request
+
+    credentials.refresh(Request())
+    return credentials.token
+
+
+def control_plane_token() -> str:
+    """Convenience: a fresh cloud-platform access token for Control Plane REST."""
+    credentials, _ = resolve_adc()
+    return access_token(credentials)
+
+
+def resolve_project(project: Optional[str] = None) -> str:
+    """Resolve the GCP project from arg > env > ADC."""
+    if project:
+        return project
+    env = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
+    if env:
+        return env
+    _, adc_project = resolve_adc()
+    if not adc_project:
+        raise RuntimeError(
+            "Could not resolve a GCP project. Pass --project, set "
+            "GOOGLE_CLOUD_PROJECT, or run `gcloud config set project <ID>`."
+        )
+    return adc_project
+
+
+def init_genai_client(project: Optional[str] = None, location: str = LOCATION):
+    """Initialize the enterprise Gen AI client. Returns (client, project_id)."""
+    from google import genai
+
+    project_id = resolve_project(project)
+    os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "true"
+    client = genai.Client(enterprise=True, project=project_id, location=location)
+    return client, project_id
+
+
+# ---------------------------------------------------------------------------
+# Config loading.
+# ---------------------------------------------------------------------------
+def load_config(path: str, expandvars: bool = False) -> Dict[str, Any]:
+    import yaml
+
+    with open(path, "r") as f:
+        raw = f.read()
+    if expandvars:
+        raw = os.path.expandvars(raw)
+    return yaml.safe_load(raw) or {}
+
+
+def load_system_instruction(template_dir: str) -> Optional[str]:
+    """Prefer AGENTS.md in the template directory as the system instruction."""
+    agents_md = os.path.join(template_dir, "AGENTS.md")
+    if os.path.exists(agents_md):
+        with open(agents_md, "r") as f:
+            return f.read()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Generic MCP helpers.
+# ---------------------------------------------------------------------------
+def build_auth_header(
+    auth_cfg: Optional[Dict[str, Any]],
+    *,
+    mode: Optional[str] = None,
+    email: Optional[str] = None,
+    api_token: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Optional[str]:
+    """Build an `Authorization` header for an MCP server from an `auth` block.
+
+    The `auth` block (from agent.yaml) names the env vars that hold credentials:
+      auth:
+        mode: basic            # basic | bearer
+        email_env: ATLASSIAN_EMAIL
+        api_token_env: ATLASSIAN_API_TOKEN
+        api_key_env: ATLASSIAN_API_KEY
+    Explicit `mode`/`email`/`api_token`/`api_key` override the env-resolved values.
+    Returns None when no auth is configured.
+    """
+    if not auth_cfg and not (mode or email or api_token or api_key):
+        return None
+    auth_cfg = auth_cfg or {}
+    mode = (mode or auth_cfg.get("mode", "basic")).lower()
+
+    email_env = auth_cfg.get("email_env", "ATLASSIAN_EMAIL")
+    token_env = auth_cfg.get("api_token_env", "ATLASSIAN_API_TOKEN")
+    key_env = auth_cfg.get("api_key_env", "ATLASSIAN_API_KEY")
+
+    if mode == "basic":
+        email = email or os.environ.get(email_env)
+        api_token = api_token or os.environ.get(token_env)
+        if not email or not api_token:
+            raise RuntimeError(
+                f"Basic auth needs an email + API token. Set {email_env} and "
+                f"{token_env} (or pass them explicitly)."
+            )
+        raw = f"{email}:{api_token}".encode("utf-8")
+        info(f"Auth: Basic as {email} (token {mask(api_token)})")
+        return "Basic " + base64.b64encode(raw).decode("ascii")
+
+    if mode == "bearer":
+        api_key = api_key or os.environ.get(key_env)
+        if not api_key:
+            raise RuntimeError(
+                f"Bearer auth needs a service-account API key. Set {key_env} "
+                "(or pass it explicitly)."
+            )
+        info(f"Auth: Bearer (key {mask(api_key)})")
+        return "Bearer " + api_key
+
+    raise RuntimeError(f"Unknown auth mode '{mode}' (expected 'basic' or 'bearer').")
+
+
+def resolve_servers(
+    config: Dict[str, Any],
+    servers_filter: Optional[List[str]] = None,
+    url_override: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    """Return the list of {name,url} MCP servers from config `mcp_servers`."""
+    selected = []
+    for s in config.get("mcp_servers", []) or []:
+        name = s.get("name")
+        url = url_override or s.get("url")
+        if not name or not url:
+            continue
+        if servers_filter is not None:
+            if name in servers_filter:
+                selected.append({"name": name, "url": url})
+        elif s.get("enabled", True):
+            selected.append({"name": name, "url": url})
+    return selected
+
+
+def build_mcp_tools(
+    servers: List[Dict[str, str]], auth_header: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Turn a server list into `mcp_server` tool specs.
+
+    The same `mcp_server` tool shape is accepted both baked into the agent
+    (Control Plane) and per interaction (Data Plane). (The Control Plane rejects
+    the older `mcp` type; use `mcp_server`.)
+    """
+    tools = []
+    for s in servers:
+        tool: Dict[str, Any] = {
+            "type": "mcp_server",
+            "name": s["name"],
+            "url": s["url"],
+        }
+        if auth_header:
+            tool["headers"] = {"Authorization": auth_header}
+        tools.append(tool)
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Raw MCP connectivity preflight (streamable HTTP JSON-RPC).
+# ---------------------------------------------------------------------------
+def _parse_mcp_body(resp: requests.Response) -> Optional[dict]:
+    ctype = resp.headers.get("content-type", "")
+    if "text/event-stream" in ctype:
+        last = None
+        for line in resp.text.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                payload = line[len("data:"):].strip()
+                if not payload:
+                    continue
+                try:
+                    obj = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(obj, dict) and ("result" in obj or "error" in obj):
+                    last = obj
+        return last
+    try:
+        return resp.json()
+    except ValueError:
+        return None
+
+
+def _mcp_post(session, url, auth_header, payload, session_id, timeout):
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    }
+    if auth_header:
+        headers["Authorization"] = auth_header
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    return session.post(url, headers=headers, json=payload, timeout=timeout)
+
+
+def mcp_list_tools(
+    url: str, auth_header: Optional[str], timeout: int = 30
+) -> Tuple[bool, List[str], str]:
+    """Directly initialize + list tools on a remote MCP server.
+
+    Returns (ok, tool_names, error_message).
+    """
+    session = requests.Session()
+    try:
+        init = _mcp_post(
+            session, url, auth_header,
+            {
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "agentkit", "version": "1.0.0"},
+                },
+            },
+            session_id=None, timeout=timeout,
+        )
+        if init.status_code in (401, 403):
+            return False, [], f"HTTP {init.status_code} (auth/scope): {init.text[:200]}"
+        if init.status_code >= 400:
+            return False, [], f"HTTP {init.status_code}: {init.text[:200]}"
+
+        session_id = init.headers.get("Mcp-Session-Id") or init.headers.get(
+            "mcp-session-id"
+        )
+        try:
+            _mcp_post(
+                session, url, auth_header,
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                session_id=session_id, timeout=timeout,
+            )
+        except requests.RequestException:
+            pass
+
+        listing = _mcp_post(
+            session, url, auth_header,
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            session_id=session_id, timeout=timeout,
+        )
+        body = _parse_mcp_body(listing)
+        if body and isinstance(body.get("result"), dict):
+            tools = body["result"].get("tools")
+            if tools is not None:
+                names = [t.get("name", "?") for t in tools]
+                if listing.status_code >= 400:
+                    return True, names, (
+                        f"(HTTP {listing.status_code} at tools/list; execution "
+                        "may still require a valid token/scopes)"
+                    )
+                return True, names, ""
+        if listing.status_code >= 400:
+            return False, [], f"tools/list HTTP {listing.status_code}: {listing.text[:200]}"
+        if not body:
+            return False, [], "Could not parse tools/list response."
+        if "error" in body:
+            return False, [], f"tools/list error: {body['error']}"
+        return True, [], ""
+    except requests.RequestException as e:
+        return False, [], f"request failed: {e}"
+
+
+def preflight_mcp(servers: List[Dict[str, str]], auth_header: Optional[str]) -> bool:
+    """Run mcp_list_tools against each server, printing a report."""
+    rule("MCP server connectivity preflight")
+    all_ok = True
+    for s in servers:
+        name, url = s["name"], s["url"]
+        good, tools, error = mcp_list_tools(url, auth_header)
+        if good:
+            ok(f"{name:9s} {url}")
+            print(c(f"    tools ({len(tools)}): " + ", ".join(tools), C.DIM))
+            if error:
+                print(c(f"    note: {error}", C.YELLOW))
+        else:
+            all_ok = False
+            err(f"{name:9s} {url}")
+            print(c(f"    {error}", C.DIM))
+    return all_ok
+
+
+# ---------------------------------------------------------------------------
+# Control Plane: register / delete agents.
+# ---------------------------------------------------------------------------
+def default_base_environment(
+    env_config: Optional[Dict[str, Any]] = None, allow_network: bool = False
+) -> Dict[str, Any]:
+    """Build a `base_environment` payload.
+
+    Uses `env_config` (agent.yaml `environment`) when provided. Falls back to a
+    remote environment; if `allow_network` (e.g. the agent uses remote MCP tools)
+    and no explicit network is configured, an outbound allowlist is added.
+    """
+    env_config = env_config or {}
+    base_env: Dict[str, Any] = {
+        "type": env_config.get("type", "remote"),
+        "sources": env_config.get("sources", []),
+    }
+    if "network" in env_config:
+        base_env["network"] = env_config["network"]
+    elif allow_network:
+        base_env["network"] = {"allowlist": [{"domain": "*"}]}
+    return base_env
+
+
+def register_agent(
+    project: str,
+    token: str,
+    agent_id: str,
+    base_agent: str,
+    description: str,
+    *,
+    system_instruction: Optional[str] = None,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    base_environment: Optional[Dict[str, Any]] = None,
+    location: str = LOCATION,
+    poll_timeout: int = 180,
+) -> str:
+    """Register a custom agent via the Control Plane and wait until ready.
+
+    Returns the full agent resource name. If `tools` is provided they are baked
+    into the agent (self-contained), so a thin client can later call it with just
+    {agent, input}. Reuses an existing agent on HTTP 409.
+    """
+    import time
+
+    base = f"https://aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}"
+    resource = f"projects/{project}/locations/{location}/agents/{agent_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    payload: Dict[str, Any] = {
+        "id": agent_id,
+        "base_agent": base_agent,
+        "description": description,
+        "base_environment": base_environment or default_base_environment(),
+    }
+    if system_instruction:
+        payload["system_instruction"] = system_instruction
+    if tools:
+        payload["tools"] = tools
+
+    resp = requests.post(f"{base}/agents", headers=headers, json=payload, timeout=60)
+    if resp.status_code not in (200, 409):
+        raise RuntimeError(f"Failed to create agent: HTTP {resp.status_code} {resp.text}")
+    if resp.status_code == 409:
+        return resource
+
+    operation_name = resp.json().get("name")
+    if operation_name:
+        deadline = time.time() + poll_timeout
+        while time.time() < deadline:
+            poll = requests.get(
+                f"https://aiplatform.googleapis.com/v1beta1/{operation_name}",
+                headers=headers, timeout=60,
+            )
+            data = poll.json()
+            if data.get("done"):
+                if "error" in data:
+                    raise RuntimeError(f"Agent registration failed: {data['error']}")
+                break
+            time.sleep(3)
+    return resource
+
+
+def delete_agent(project: str, token: str, agent_id: str, location: str = LOCATION) -> None:
+    """Best-effort delete of an agent."""
+    url = (
+        f"https://aiplatform.googleapis.com/v1beta1/projects/{project}"
+        f"/locations/{location}/agents/{agent_id}"
+    )
+    try:
+        requests.delete(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+    except requests.RequestException:
+        pass
+
+
+def agent_resource_name(agent: str, project: str, location: str = LOCATION) -> str:
+    """Accept either a bare agent id or a full resource name and return the full name."""
+    if agent.startswith("projects/"):
+        return agent
+    return f"projects/{project}/locations/{location}/agents/{agent}"
+
+
+# ---------------------------------------------------------------------------
+# Data Plane: streaming interactions + renderers.
+# ---------------------------------------------------------------------------
+class SimpleRenderer:
+    """Plain renderer: prints text and code-execution results inline."""
+
+    def handle_event(self, event: Any) -> None:
+        if getattr(event, "event_type", None) != "step.delta":
+            return
+        delta = getattr(event, "delta", None)
+        if delta is None:
+            return
+        dtype = getattr(delta, "type", None)
+        if dtype == "text":
+            text = getattr(delta, "text", "") or ""
+            if text:
+                print(text, end="", flush=True)
+        elif dtype == "code_execution_result":
+            result = getattr(delta, "result", "") or ""
+            if result:
+                print(result, end="", flush=True)
+
+    def finish(self) -> None:
+        print()
+
+
+class RichRenderer:
+    """Colored renderer that also surfaces thoughts and MCP tool-call events."""
+
+    def __init__(self) -> None:
+        self._in_text = False
+
+    def _break_text(self) -> None:
+        if self._in_text:
+            print()
+            self._in_text = False
+
+    def handle_event(self, event: Any) -> None:
+        if getattr(event, "event_type", None) != "step.delta":
+            return
+        delta = getattr(event, "delta", None)
+        if delta is None:
+            return
+        dtype = getattr(delta, "type", None)
+
+        if dtype == "text":
+            text = getattr(delta, "text", "") or ""
+            if text:
+                print(text, end="", flush=True)
+                self._in_text = True
+        elif dtype == "thought_summary":
+            thought = getattr(delta, "text", "") or getattr(delta, "summary", "")
+            if thought:
+                self._break_text()
+                print(c(f"  [thinking] {thought}", C.DIM))
+        elif dtype == "mcp_server_tool_call":
+            self._break_text()
+            server = getattr(delta, "server_name", "?")
+            name = getattr(delta, "name", "?")
+            args = getattr(delta, "arguments", {})
+            args_str = json.dumps(args, ensure_ascii=False) if args else "{}"
+            if len(args_str) > 200:
+                args_str = args_str[:200] + "..."
+            print(c(f"  \u2192 tool call [{server}.{name}] {args_str}", C.BLUE))
+        elif dtype == "mcp_server_tool_result":
+            self._break_text()
+            print(c("  \u2190 tool result received", C.BLUE))
+        elif dtype == "code_execution_result":
+            result = getattr(delta, "result", "") or ""
+            if result:
+                self._break_text()
+                print(c(f"  [code result] {result}", C.DIM))
+
+    def finish(self) -> None:
+        self._break_text()
+
+
+def extract_final_text(interaction: Any) -> str:
+    """Pull the final model text out of a completed interaction object."""
+    steps = getattr(interaction, "steps", None) or []
+    for step in reversed(steps):
+        content = getattr(step, "content", None) or []
+        texts: List[str] = []
+        for part in content:
+            text = getattr(part, "text", None)
+            if text:
+                texts.append(text)
+        if texts:
+            return "".join(texts)
+    return ""
+
+
+def stream_interaction(
+    client: Any,
+    agent_resource: str,
+    prompt: str,
+    *,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    previous_interaction_id: Optional[str] = None,
+    environment: Optional[Dict[str, Any]] = None,
+    stream: bool = True,
+    background: bool = True,
+    store: bool = True,
+    timeout: int = 900,
+    renderer: Optional[Any] = None,
+) -> Tuple[str, Optional[str]]:
+    """Run one interaction turn. Returns (final_text, interaction_id).
+
+    `tools` is omitted when empty (a thin turn against a self-contained agent).
+    In streaming mode, text deltas are accumulated for `final_text` and the
+    interaction id is captured from lifecycle events for multi-turn chaining.
+    """
+    kwargs: Dict[str, Any] = {"agent": agent_resource, "input": prompt, "store": store}
+    if tools:
+        kwargs["tools"] = tools
+    if previous_interaction_id:
+        kwargs["previous_interaction_id"] = previous_interaction_id
+    if environment:
+        kwargs["environment"] = environment
+
+    if not stream:
+        interaction = client.interactions.create(**kwargs)
+        final_text = extract_final_text(interaction)
+        print(final_text)
+        return final_text, getattr(interaction, "id", None)
+
+    active_renderer = renderer if renderer is not None else SimpleRenderer()
+    final_text = ""
+    interaction_id = None
+    response_stream = client.interactions.create(
+        stream=True, background=background, timeout=timeout, **kwargs
+    )
+    for event in response_stream:
+        active_renderer.handle_event(event)
+        # Accumulate text for callers that need the transcript (e.g. prober's
+        # x-extract-messages), independent of how the renderer displays it.
+        if getattr(event, "event_type", None) == "step.delta":
+            delta = getattr(event, "delta", None)
+            if delta is not None and getattr(delta, "type", None) == "text":
+                final_text += getattr(delta, "text", "") or ""
+        # Capture the interaction id for stateful multi-turn chaining.
+        inter = getattr(event, "interaction", None)
+        iid = (
+            getattr(inter, "id", None)
+            or getattr(event, "interaction_id", None)
+            or getattr(event, "id", None)
+        )
+        if iid:
+            interaction_id = iid
+    active_renderer.finish()
+    return final_text, interaction_id
+
+
+def package_dir() -> str:
+    """Absolute path to the directory containing this module (agent_templates/)."""
+    return os.path.dirname(os.path.abspath(__file__))

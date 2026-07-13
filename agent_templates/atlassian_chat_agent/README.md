@@ -3,9 +3,10 @@
 This showcase builds a **multi-turn** agent that talks to your **Jira** and
 **Confluence** by connecting to **Atlassian's official, fully-managed remote
 Rovo MCP Server**. There is nothing to host: the Gemini Enterprise Agent
-Platform routes the model's tool calls to `https://mcp.atlassian.com/v1/mcp`, and
-this template's standalone `chat.py` drives the whole thing over the stateful
-**Interactions API**.
+Platform routes the model's tool calls to `https://mcp.atlassian.com/v1/mcp`. The
+shared [`../prober.py`](../prober.py) provisions the agent and runs its example
+prompts, and this template's [`chat.py`](chat.py) is an interactive multi-turn
+chat client — both over the stateful **Interactions API**.
 
 Unlike the [`mcp_support`](../mcp_support/README.md) example (which hosts a local
 MCP server and tunnels it), the Rovo MCP server is already remote and
@@ -27,16 +28,24 @@ flow.
 | --- | --- |
 | `agent.yaml` | Declares the `base_agent`, the remote Rovo MCP server, the auth mode, and example prompts. |
 | `AGENTS.md` | System instruction (persona + workflow + safety) for the agent, including the **cloudId-first** rule. |
-| `chat.py` | Standalone runner: builds the Atlassian auth header → **registers an agent (Control Plane)** → calls it via the **Interactions API** with the MCP tool → cleans up. **Replaces prober.py for this template.** |
+| `chat.py` | Interactive multi-turn **chat client**. Point it at an existing agent (`--agent`) or provision one from this template (`--from-template`), then chat. |
 | `requirements.txt` | Python dependencies. |
 | `.env.example` | Template for your Atlassian credentials (copy to `.env`; git-ignored). |
 | `demo/` | An end-to-end incident-triage demo: seeds a Confluence KB from official Kubernetes runbooks + baseline Jira bugs, then walks two use cases (file a bug from context; find the existing bug). See [demo/DEMO.md](demo/DEMO.md). |
 
+Two runners cover this template (both share [`../agentkit.py`](../agentkit.py)):
+
+*   **`../prober.py`** provisions a **self-contained** agent (the Rovo MCP server
+    + your auth header baked in at registration) and runs the single-turn
+    `examples` from `agent.yaml`. Add `--check` / `--list-tools` for an MCP
+    preflight, or `--keep-agent` to keep it and print its id.
+*   **`chat.py`** is the interactive multi-turn client (this template's focus).
+
 > **Interactions model note.** This project's Interactions API supports
-> **agent-based** interactions only. So `chat.py` registers an agent with
-> `base_agent` (default `antigravity-preview-05-2026`) + a `base_environment`,
-> then calls it with `background=True`, supplying the MCP server + auth header
-> **per turn** (so no secret is stored on the agent).
+> **agent-based** interactions only. Agents are registered with a `base_agent`
+> (default `antigravity-preview-05-2026`) + a `base_environment`, and the MCP
+> server + auth header are **baked into the agent** so a thin client can then
+> chat with just `{agent, input}`.
 
 ---
 
@@ -44,15 +53,15 @@ flow.
 
 The Rovo MCP server supports **non-interactive API-token auth** — the client
 sends credentials directly in the `Authorization` header (no browser consent).
-`chat.py` supports both documented mechanisms:
+Both runners support the two documented mechanisms:
 
 | Mode | Credential | Header sent to Rovo MCP |
 | --- | --- | --- |
 | `basic` (default) | Personal API token | `Authorization: Basic base64(email:api_token)` |
 | `bearer` | Service-account API key | `Authorization: Bearer <api_key>` |
 
-The platform forwards this header **only** to the Rovo MCP URL, and `chat.py`
-supplies it turn-scoped, so the token is never persisted on the agent.
+The header is baked into the agent at registration; the platform keeps it
+**confidential to the Rovo MCP URL** and never returns it.
 
 > **cloudId matters.** With API-token auth the token is **not** bound to a single
 > Atlassian site, and every Jira/Confluence tool needs a `cloudId`. The agent's
@@ -75,23 +84,23 @@ Two independent credentials are in play:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Dev as chat.py (you)
+    participant Dev as prober.py / chat.py (you)
     participant CP as Control Plane (GCP REST)
     participant DP as Interactions API (Data Plane)
     participant MCP as Atlassian Rovo MCP (mcp.atlassian.com)
     participant AT as Jira / Confluence
 
     Dev->>Dev: Build Authorization header from API token
-    Dev->>CP: Register agent (base_agent + base_environment + system_instruction)
+    Dev->>CP: Register self-contained agent (tools=[mcp_server + Authorization])
     CP-->>Dev: Agent ready (poll LRO)
-    Dev->>DP: interactions.create(agent, input, tools=[mcp_server + Authorization])
+    Dev->>DP: interactions.create(agent, input)   # thin turn, no tools
     Note over DP: Model calls getAccessibleAtlassianResources → cloudId
-    DP->>MCP: Routed tool call (forwards Authorization header)
+    DP->>MCP: Routed tool call (forwards the baked-in Authorization header)
     MCP->>AT: Call Jira/Confluence as the token owner
     AT-->>MCP: Data / action result
     MCP-->>DP: Tool result
     DP-->>Dev: Streamed tokens + tool-call events → final answer
-    Dev->>CP: Delete agent (cleanup)
+    Dev->>CP: Delete agent (cleanup, unless --keep-agent)
 ```
 
 ---
@@ -143,33 +152,33 @@ python3 -m venv venv
 
 ## Run it
 
-All commands are from this directory using the template's venv.
+Commands below use the repo's venv. `prober.py` runs from the repo root;
+`chat.py` from this template directory (or via its full path).
 
 ### Preflight — verify the token + MCP connectivity (no model call)
 ```bash
-./venv/bin/python3 chat.py --check
+./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --check
+./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --list-tools
 ```
 This builds the auth header and speaks raw MCP (`initialize` + `tools/list`) to
 the Rovo server, printing the tools your token can see.
 
-### List the tools the server offers
-```bash
-./venv/bin/python3 chat.py --list-tools
-```
-
 ### Run the example prompts from `agent.yaml`
 ```bash
-./venv/bin/python3 chat.py
+./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --project YOUR_PROJECT
 ```
+`prober` registers a self-contained agent, runs each example single-turn, then
+deletes it. Add an ad-hoc prompt to override the examples, or `--keep-agent` to
+keep the agent (it prints the id) so you can chat with it.
 
-### Ad-hoc prompt
+### Interactive, multi-turn chat
+Provision from the template and chat in one command:
 ```bash
-./venv/bin/python3 chat.py "Find the highest-priority open bugs in the PLATFORM project."
+./venv/bin/python3 chat.py --from-template . --project YOUR_PROJECT
 ```
-
-### Interactive, multi-turn chat (stateful)
+Or attach to an agent you kept earlier (`prober … --keep-agent` prints the id):
 ```bash
-./venv/bin/python3 chat.py --interactive
+./venv/bin/python3 chat.py --agent <agent-id> --project YOUR_PROJECT
 ```
 Each turn is chained with `previous_interaction_id`, so the agent remembers the
 resolved `cloudId` and prior context across the conversation.
@@ -183,72 +192,58 @@ you > Create a Confluence page in the TEAM space summarizing this conversation.
 ```
 
 ### Useful flags
-| Flag | Effect |
-| --- | --- |
-| `--project PROJECT` | GCP project for the Interactions API (overrides `GOOGLE_CLOUD_PROJECT`). |
-| `--auth-mode basic\|bearer` | Choose personal-token (Basic) or service-key (Bearer) auth. |
-| `--email` / `--api-token` | Basic-auth credentials (else from env). |
-| `--api-key` | Bearer-auth service-account key (else from env). |
-| `--base-agent NAME` | Override the runtime `base_agent` from agent.yaml. |
-| `--mcp-url URL` | Override the Rovo MCP endpoint. |
-| `--mcp-on-agent` | Bake the MCP server + header into the agent (self-contained; see below). |
-| `--keep-agent` | Do not delete the registered agent after the run. |
-| `--no-stream` | Disable token streaming. |
+| Runner | Flag | Effect |
+| --- | --- | --- |
+| both | `--project PROJECT` | GCP project (overrides `GOOGLE_CLOUD_PROJECT` / ADC). |
+| prober | `--check` / `--list-tools` | MCP connectivity/token preflight, then exit. |
+| prober | `--keep-agent` | Keep the agent after running and print its id. |
+| chat | `--agent <id\|resource>` | Chat with an existing (self-contained) agent. |
+| chat | `--from-template DIR` | Register a self-contained agent from a template, chat, then delete on exit. |
+| chat | `--keep-agent` | With `--from-template`: keep the agent after exit. |
+| chat | `--auth-mode` / `--email` / `--api-token` / `--api-key` | Override MCP auth for `--from-template` (else from `agent.yaml` + env). |
+| chat | `--no-stream` | Disable token streaming. |
 
 ---
 
 ## How the MCP tool is wired
 
-`chat.py` passes the Rovo server as a turn-scoped `mcp_server` tool on each
-Interactions API call:
+Both runners bake the Rovo server into the agent at **registration** (Control
+Plane), so the agent is self-contained:
 
 ```python
-client.interactions.create(
-    agent=agent_resource,
-    input="What's the status of PROJ-1234?",
-    tools=[{
-        "type": "mcp_server",
-        "name": "atlassian",
-        "url": "https://mcp.atlassian.com/v1/mcp",
-        "headers": {"Authorization": "Basic <base64(email:api_token)>"},
-    }],
-    store=True,
-    stream=True,
-    background=True,
-)
+register_agent(..., tools=[{
+    "type": "mcp_server",
+    "name": "atlassian",
+    "url": "https://mcp.atlassian.com/v1/mcp",
+    "headers": {"Authorization": "Basic <base64(email:api_token)>"},
+}])
 ```
 
-Because `tools` and the auth header are turn-scoped, the token is supplied fresh
-on every turn and never stored on the agent.
+Then every interaction is a thin `{agent, input}` turn — no tools injected per
+call. The platform routes tool calls to the MCP URL and keeps the header
+confidential to that URL.
 
 > **SDK note:** Use `google-genai >= 2.0.0`. Legacy SDKs
 > (`google-cloud-aiplatform`, `google-generativeai`) do not support the
 > Interactions API. Use current models only (e.g. `gemini-2.5-pro`,
 > `gemini-3-flash-preview`); `gemini-2.0`/`1.5` are unsupported.
 
-### Two integration patterns: per-interaction vs. self-contained
+### Why self-contained (baked-in) MCP?
 
-The same `mcp_server` tool (type + name/url/headers) can be attached in **two**
-places. The choice determines whether a *generic* chat client can drive the agent.
+Baking the MCP server into the agent is what lets **any** client drive it — a
+turn is just `{agent, input}`, so a generic/unified chat front-end (e.g. Gemini
+Enterprise / Agentspace UI) works without knowing the agent's MCP config. The
+alternative — injecting the `mcp_server` tool per interaction (Data Plane) — is
+still supported by `agentkit.stream_interaction(..., tools=...)` for programmatic
+clients that manage per-user tokens, but a unified app can't do that.
 
-| | Per interaction (default) | On the agent — `--mcp-on-agent` (self-contained) |
-| --- | --- | --- |
-| Where the MCP tool + header live | Sent on every `interactions.create` call (Data Plane) | Baked into the agent at registration (Control Plane) |
-| Token stored on the agent | No (fresh per turn) | Yes (platform keeps it confidential to the MCP URL) |
-| Who can call the agent | Only a **bespoke client** that knows this agent's MCP config and injects it each turn | **Any** client — a turn is just `{agent, input}` |
-| Works with a unified chat app (Gemini Enterprise / Agentspace UI) | **No** — the app doesn't know to inject per-agent tools | **Yes** — the agent is self-contained |
-| Per-user identity | Each caller can pass their own token per turn | Single baked identity; for true per-user identity use the MCP server's **OAuth** instead of a static header |
+> **Per-user identity:** a baked-in static API token means every caller acts as
+> that one identity. For true per-user identity through a shared agent, use the
+> Rovo MCP server's **OAuth 2.1** instead of a static header.
 
-So: **to integrate with a unified chat front-end, register the agent with the MCP
-server baked in** (`--mcp-on-agent`) so any thin client works. Use per-interaction
-injection for programmatic/automation clients that manage per-user tokens
-themselves. `chat.py` supports both:
-
-```bash
-# Self-contained agent (register once, reuse), then a thin turn with no tools:
-./venv/bin/python3 chat.py --project YOUR_PROJECT --mcp-on-agent --keep-agent \
-  "List my Jira projects."
-```
+> **Tool-type note (verified against the live API):** for MCP servers the
+> Control Plane accepts tool type **`mcp_server`** (the same as the Data Plane);
+> the older `type: mcp` is rejected.
 
 > **Tool-type gotcha (verified against the live API):** for MCP servers the
 > Control Plane accepts tool type **`mcp_server`** — the same as the Data Plane.
