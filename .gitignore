@@ -20,5 +20,11 @@ Thumbs.db
 # Agent template run outputs
 agent_templates/**/output*/
 
+# Secrets: env files and cached auth tokens (never commit real credentials)
+.env
+agent_templates/**/.env
+agent_templates/**/token*.json
+agent_templates/**/client_secret.json
+
 # Agent platform local configs/logs
 .agents/

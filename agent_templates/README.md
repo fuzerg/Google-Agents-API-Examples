@@ -33,11 +33,18 @@ agent_templates/
 │   ├── slow_code.py            # Target Python code to optimize
 │   └── skills/                 # GitHub REST API helper class
 │
-└── mcp_support/                # Showcase 3: IT Support Bot (MCP)
+├── mcp_support/                # Showcase 3: IT Support Bot (MCP)
+│   ├── agent.yaml
+│   ├── AGENTS.md
+│   ├── README.md
+│   └── mcp_server.py           # Local system monitor server
+│
+└── atlassian_chat_agent/       # Showcase 4: Atlassian Chat Agent (Remote MCP)
     ├── agent.yaml
     ├── AGENTS.md
     ├── README.md
-    └── mcp_server.py           # Local system monitor server
+    ├── chat.py                 # Multi-turn runner (replaces prober.py)
+    └── .env.example            # Atlassian API-token credentials template
 ```
 
 ---
@@ -119,4 +126,8 @@ Refer to the individual README files in each folder for specific prerequisites (
 3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/mcp_support/README.md)
     *   *Requires starting the local MCP server and exposing a tunnel.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support`
+4.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
+    *   *Multi-turn agent using Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
+    *   *Uses its own `chat.py` runner instead of `prober.py`.*
+    *   Command: `cd agent_templates/atlassian_chat_agent && ./venv/bin/python3 chat.py --interactive`
 
