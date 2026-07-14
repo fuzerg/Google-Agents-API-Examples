@@ -176,6 +176,37 @@ def load_system_instruction(template_dir: str) -> Optional[str]:
     return None
 
 
+def load_dotenv(path: str, override: bool = False) -> int:
+    """Load KEY=VALUE lines from a `.env` file into os.environ.
+
+    Simple, dependency-free parser: skips blank lines and `#` comments, tolerates
+    a leading `export `, and strips surrounding single/double quotes. By default
+    it does NOT override variables already set in the environment (the shell
+    wins). Returns the number of variables applied. No-op if the file is missing.
+    """
+    if not path or not os.path.exists(path):
+        return 0
+    applied = 0
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if not key:
+                continue
+            if override or key not in os.environ:
+                os.environ[key] = value
+                applied += 1
+    if applied:
+        info(f"Loaded {applied} var(s) from {path}")
+    return applied
+
+
 # ---------------------------------------------------------------------------
 # Generic MCP helpers.
 # ---------------------------------------------------------------------------

@@ -81,6 +81,8 @@ def run_repl(client, agent_resource: str, stream: bool) -> None:
 def provision_from_template(args, project_id, token):
     """Register a self-contained agent from a template dir. Returns (resource, id)."""
     template_dir = os.path.abspath(args.from_template)
+    # Auto-load the template's .env so per-server `auth` credentials are present.
+    ak.load_dotenv(os.path.join(template_dir, ".env"))
     config = ak.load_config(os.path.join(template_dir, "agent.yaml"))
     system_instruction = ak.load_system_instruction(template_dir)
 

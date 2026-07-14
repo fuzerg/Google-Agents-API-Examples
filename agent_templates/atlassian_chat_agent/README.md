@@ -138,9 +138,10 @@ Copy the example env file and fill it in:
 cd agent_templates/atlassian_chat_agent
 cp .env.example .env
 $EDITOR .env            # set ATLASSIAN_EMAIL + ATLASSIAN_API_TOKEN
-set -a && source .env && set +a
 ```
-The MCP server's `auth` block in `agent.yaml` names which env vars to read
+Both `prober.py` and `chat.py` **auto-load this template's `.env`**, so you don't
+need to source it manually (shell-exported vars still take precedence). The MCP
+server's `auth` block in `agent.yaml` names which env vars to read
 (e.g. `email_env: ATLASSIAN_EMAIL`, `api_token_env: ATLASSIAN_API_TOKEN`).
 
 ### 5. Install dependencies

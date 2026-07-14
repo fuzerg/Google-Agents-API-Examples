@@ -80,6 +80,10 @@ def load_template(template_dir):
         print(f"Error: agent.yaml not found in {template_dir}")
         sys.exit(1)
 
+    # Auto-load the template's .env so credentials referenced by agent.yaml's
+    # per-server `auth` blocks are available without manually sourcing it.
+    ak.load_dotenv(os.path.join(template_dir, ".env"))
+
     # MCP self-hosted templates normalize MCP_SERVER_URL -> /sse before expansion.
     mcp_url = os.environ.get("MCP_SERVER_URL")
     if mcp_url:
