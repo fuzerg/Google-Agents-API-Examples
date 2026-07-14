@@ -2,19 +2,14 @@
 
 This showcase builds a **multi-turn** agent that talks to your **Jira** and
 **Confluence** by connecting to **Atlassian's official, fully-managed remote
-Rovo MCP Server**. There is nothing to host: the Gemini Enterprise Agent
-Platform routes the model's tool calls to `https://mcp.atlassian.com/v1/mcp`. The
-shared, template-agnostic runners [`../prober.py`](../prober.py) (provisions the
-agent + runs its example prompts) and [`../chat.py`](../chat.py) (interactive
-multi-turn chat) drive it over the stateful **Interactions API**.
+Rovo MCP Server**. The Gemini Enterprise Agent Platform routes the model's tool
+calls to `https://mcp.atlassian.com/v1/mcp`. The template-agnostic runners
+[`../prober.py`](../prober.py) (provisions the agent + runs its example prompts)
+and [`../chat.py`](../chat.py) (interactive multi-turn chat) drive it over the
+stateful **Interactions API**.
 
-Unlike the [`mcp_support`](../mcp_support/README.md) example (which hosts a local
-MCP server and tunnels it), the Rovo MCP server is already remote and
-Atlassian-operated. Your only job is to enable API-token auth, create a token,
-and let the platform forward it as an `Authorization` header. This mirrors the
-[`workspace_chat_agent`](../workspace_chat_agent/README.md) architecture, but
-with a simple Atlassian **API token** instead of an interactive Google OAuth
-flow.
+Your job is to enable API-token auth, create a token, and let the platform
+forward it as an `Authorization` header.
 
 > **Reference:** [Getting started with the Atlassian Rovo MCP Server](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/)
 > · [Authentication via API token](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/)
