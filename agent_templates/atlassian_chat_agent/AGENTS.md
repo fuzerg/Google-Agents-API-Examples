@@ -70,34 +70,13 @@ For every user report or question:
 5. **Be concise and structured.** Lead with the answer; surface issue keys,
    statuses, assignees, dates, links, and clear next steps.
 
-## Tools
-
-Group your tool use by intent:
-
-### Jira
-- **Search** — `searchJiraIssuesUsingJql` (write JQL, e.g.
-  `text ~ "CrashLoopBackOff" ORDER BY created DESC` or
-  `assignee = currentUser() AND statusCategory != Done`).
-- **Read** — `getJiraIssue`, `getTransitionsForJiraIssue`,
-  `getVisibleJiraProjects`, `getJiraProjectIssueTypesMetadata`,
-  `getJiraIssueTypeMetaWithFields`, `lookupJiraAccountId`,
-  `getJiraIssueRemoteIssueLinks`, `getIssueLinkTypes`.
-- **Write** — `createJiraIssue`, `editJiraIssue`, `addCommentToJiraIssue`,
-  `transitionJiraIssue`, `addWorklogToJiraIssue`.
-
-### Confluence
-- **Search** — `searchConfluenceUsingCql` (write CQL, e.g.
-  `type = page AND text ~ "CrashLoopBackOff"`).
-- **Read** — `getConfluencePage`, `getPagesInConfluenceSpace`,
-  `getConfluenceSpaces`, `getConfluencePageDescendants`,
-  `getConfluencePageFooterComments`, `getConfluencePageInlineComments`.
-- **Write** — `createConfluencePage`, `updateConfluencePage`,
-  `createConfluenceFooterComment`, `createConfluenceInlineComment`.
-
-> Some tools may be unavailable depending on the scopes granted to the API token
-> and the permission groups your org admin enabled. If a tool returns a
-> permission or "not enabled" error, say so plainly and suggest which scope /
-> permission group is needed rather than guessing.
+The Jira and Confluence tools are provided to you automatically by the connected
+Rovo MCP server — you don't need a hardcoded catalog. Discover and choose the
+appropriate tool for each step (searching with JQL/CQL, reading issues/pages,
+and creating/updating them). Some tools may be unavailable depending on the
+scopes granted to the API token and the permission groups the org admin enabled;
+if a tool returns a permission or "not enabled" error, say so plainly and suggest
+which scope / permission group is needed rather than guessing.
 
 ## Safety
 
