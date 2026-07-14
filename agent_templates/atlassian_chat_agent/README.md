@@ -4,9 +4,9 @@ This showcase builds a **multi-turn** agent that talks to your **Jira** and
 **Confluence** by connecting to **Atlassian's official, fully-managed remote
 Rovo MCP Server**. There is nothing to host: the Gemini Enterprise Agent
 Platform routes the model's tool calls to `https://mcp.atlassian.com/v1/mcp`. The
-shared [`../prober.py`](../prober.py) provisions the agent and runs its example
-prompts, and this template's [`chat.py`](chat.py) is an interactive multi-turn
-chat client — both over the stateful **Interactions API**.
+shared, template-agnostic runners [`../prober.py`](../prober.py) (provisions the
+agent + runs its example prompts) and [`../chat.py`](../chat.py) (interactive
+multi-turn chat) drive it over the stateful **Interactions API**.
 
 Unlike the [`mcp_support`](../mcp_support/README.md) example (which hosts a local
 MCP server and tunnels it), the Rovo MCP server is already remote and
@@ -26,20 +26,20 @@ flow.
 
 | File | Purpose |
 | --- | --- |
-| `agent.yaml` | Declares the `base_agent`, the remote Rovo MCP server, the auth mode, and example prompts. |
-| `AGENTS.md` | System instruction (persona + workflow + safety) for the agent, including the **cloudId-first** rule. |
-| `chat.py` | Interactive multi-turn **chat client**. Point it at an existing agent (`--agent`) or provision one from this template (`--from-template`), then chat. |
+| `agent.yaml` | Declares the `base_agent`, the remote Rovo MCP server (with per-server `auth`), and example prompts. |
+| `AGENTS.md` | System instruction (support/triage persona + workflow + safety). |
 | `requirements.txt` | Python dependencies. |
 | `.env.example` | Template for your Atlassian credentials (copy to `.env`; git-ignored). |
 | `demo/` | An end-to-end incident-triage demo: seeds a Confluence KB from official Kubernetes runbooks + baseline Jira bugs, then walks two use cases (file a bug from context; find the existing bug). See [demo/DEMO.md](demo/DEMO.md). |
 
-Two runners cover this template (both share [`../agentkit.py`](../agentkit.py)):
+The runners live one level up and are **template-agnostic** (both share
+[`../agentkit.py`](../agentkit.py)):
 
-*   **`../prober.py`** provisions a **self-contained** agent (the Rovo MCP server
-    + your auth header baked in at registration) and runs the single-turn
-    `examples` from `agent.yaml`. Add `--check` / `--list-tools` for an MCP
-    preflight, or `--keep-agent` to keep it and print its id.
-*   **`chat.py`** is the interactive multi-turn client (this template's focus).
+*   **[`../prober.py`](../prober.py)** provisions a **self-contained** agent (the
+    Rovo MCP server + your auth header baked in at registration) and runs the
+    single-turn `examples` from `agent.yaml`. Add `--check` / `--list-tools` for
+    an MCP preflight, or `--keep-agent` to keep it and print its id.
+*   **[`../chat.py`](../chat.py)** is the interactive multi-turn chat client.
 
 > **Interactions model note.** This project's Interactions API supports
 > **agent-based** interactions only. Agents are registered with a `base_agent`
@@ -154,8 +154,8 @@ python3 -m venv venv
 
 ## Run it
 
-Commands below use the repo's venv. `prober.py` runs from the repo root;
-`chat.py` from this template directory (or via its full path).
+Commands below run from the repo root using the repo's venv. Both `prober.py`
+and `chat.py` live in `agent_templates/` and work with any template.
 
 ### Preflight — verify the token + MCP connectivity (no model call)
 ```bash
@@ -176,11 +176,11 @@ keep the agent (it prints the id) so you can chat with it.
 ### Interactive, multi-turn chat
 Provision from the template and chat in one command:
 ```bash
-./venv/bin/python3 chat.py --from-template . --project YOUR_PROJECT
+./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent --project YOUR_PROJECT
 ```
 Or attach to an agent you kept earlier (`prober … --keep-agent` prints the id):
 ```bash
-./venv/bin/python3 chat.py --agent <agent-id> --project YOUR_PROJECT
+./venv/bin/python3 agent_templates/chat.py --agent <agent-id> --project YOUR_PROJECT
 ```
 Each turn is chained with `previous_interaction_id`, so the agent remembers the
 resolved `cloudId` and prior context across the conversation.

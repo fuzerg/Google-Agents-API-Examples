@@ -32,12 +32,16 @@ streaming multi-turn REPL against an agent, chaining turns via
 All shared logic (auth, client, control plane, streaming, MCP helpers) lives in
 `agentkit.py`.
 
-Examples:
-  # Provision + chat + cleanup in one command (Atlassian template):
-  python3 chat.py --from-template . --project YOUR_PROJECT
+This client is template-agnostic: it has no task-specific logic and works with
+any agent template (it reads `mcp_servers` + per-server `auth` from the template's
+agent.yaml).
 
-  # Chat with an existing agent:
-  python3 chat.py --agent atlassian-chat-showcase-ab12 --project YOUR_PROJECT
+Examples:
+  # Provision from a template dir, chat, then clean up:
+  python3 agent_templates/chat.py --from-template agent_templates/<template> --project YOUR_PROJECT
+
+  # Chat with an existing agent (e.g. one kept via `prober.py <template> --keep-agent`):
+  python3 agent_templates/chat.py --agent <agent-id> --project YOUR_PROJECT
 """
 
 import argparse
@@ -45,9 +49,8 @@ import os
 import sys
 import uuid
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# agentkit.py lives in the agent_templates/ directory (parent of this template).
-sys.path.insert(0, os.path.dirname(SCRIPT_DIR))
+# agentkit.py lives in the same directory as this script.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agentkit as ak  # noqa: E402
 
 

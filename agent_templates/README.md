@@ -20,6 +20,7 @@ agent_templates/
 ├── requirements.txt            # Local development dependencies
 ├── agentkit.py                 # Shared toolkit (auth, client, control plane, streaming, MCP)
 ├── prober.py                   # Unified provisioner + single-turn example runner
+├── chat.py                     # Template-agnostic interactive multi-turn chat client
 │
 ├── financial_analyst/          # Showcase 1: Smart Financial Analyst
 │   ├── agent.yaml
@@ -44,7 +45,7 @@ agent_templates/
     ├── agent.yaml
     ├── AGENTS.md
     ├── README.md
-    ├── chat.py                 # Interactive multi-turn chat client
+    ├── demo/                   # End-to-end incident-triage demo + seeder
     └── .env.example            # Atlassian API-token credentials template
 ```
 
@@ -52,17 +53,18 @@ agent_templates/
 
 Both runners import `agentkit.py`, which holds the shared machinery (ADC auth,
 Gen AI client init, agent register/delete on the Control Plane, streaming
-interactions + renderers, and generic MCP helpers). Each entrypoint stays thin:
+interactions + renderers, and generic MCP helpers). Both are **template-agnostic**
+and live next to `agentkit.py`; each entrypoint stays thin:
 
 *   **`prober.py <template_dir>`** — the **unified provisioner + single-turn
     example runner** for every template. It registers a *self-contained* agent
     (baking in the template's tools, including remote MCP servers with their auth
     headers) and runs the `examples` from `agent.yaml`. Flags: `--check` /
     `--list-tools` (MCP preflight), `--keep-agent` (keep + print the agent id).
-*   **`atlassian_chat_agent/chat.py`** — a generic **interactive multi-turn chat
-    client**. Point it at an existing agent (`--agent <id>`) or have it provision
-    one from a template (`--from-template <dir>`), then chat. Because prober
-    registers agents self-contained, a thin client can drive them with just
+*   **`chat.py`** — a template-agnostic **interactive multi-turn chat client**.
+    Point it at an existing agent (`--agent <id>`) or have it provision one from
+    any template (`--from-template <dir>`), then chat. Because prober registers
+    agents self-contained, a thin client can drive them with just
     `{agent, input}`.
 
 ---
@@ -147,6 +149,5 @@ Refer to the individual README files in each folder for specific prerequisites (
 4.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
     *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
     *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
-    *   Chat interactively: `./venv/bin/python3 agent_templates/atlassian_chat_agent/chat.py --from-template agent_templates/atlassian_chat_agent`
-    *   Command: `cd agent_templates/atlassian_chat_agent && ./venv/bin/python3 chat.py --interactive`
+    *   Chat interactively: `./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent`
 

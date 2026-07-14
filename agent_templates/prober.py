@@ -28,7 +28,8 @@ It works for every template in this repo:
     agent so it is self-contained.
 
 Because the agent is self-contained, you can also keep it (`--keep-agent`) and
-then chat with it interactively via `chat.py --agent <id>`.
+then chat with it interactively via the sibling `chat.py` (a template-agnostic
+interactive client): `chat.py --agent <id>`.
 
 Usage:
   python3 agent_templates/prober.py <template_dir> [prompt]
@@ -36,7 +37,8 @@ Usage:
   python3 agent_templates/prober.py <template_dir> --list-tools
   python3 agent_templates/prober.py <template_dir> --keep-agent   # keep + print id
 
-Shared logic (auth, client, control plane, streaming) lives in `agentkit.py`.
+Shared logic (auth, client, control plane, streaming) lives alongside this
+script in `agentkit.py`; interactive multi-turn chat lives in `chat.py`.
 """
 
 import argparse

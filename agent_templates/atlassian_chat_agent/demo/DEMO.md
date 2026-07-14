@@ -82,7 +82,7 @@ Run an interactive session (provisioned from this template) and just describe th
 problem:
 
 ```bash
-../../venv/bin/python3 chat.py --from-template . --project YOUR_GCP_PROJECT
+../../venv/bin/python3 ../chat.py --from-template . --project YOUR_GCP_PROJECT
 ```
 
 **Turn 1 (User A reports):**
@@ -109,7 +109,7 @@ kubectl steps, and links to the Confluence pages it used.
 Start a **fresh** conversation (no shared context) and report the same symptom:
 
 ```bash
-../../venv/bin/python3 chat.py --from-template . --project YOUR_GCP_PROJECT
+../../venv/bin/python3 ../chat.py --from-template . --project YOUR_GCP_PROJECT
 ```
 
 **Turn 1 (User B reports):**
@@ -121,7 +121,7 @@ tells the user it's already tracked — returning its key, status, and the captu
 context (symptom + kubectl debugging steps) instead of filing a duplicate.
 
 (You can also run this as a one-off via
-`../../venv/bin/python3 ../../prober.py .. --project YOUR_GCP_PROJECT "<the message above>"`.)
+`../../venv/bin/python3 ../prober.py . --project YOUR_GCP_PROJECT "<the message above>"`.)
 
 ---
 
