@@ -18,7 +18,9 @@ Each example is housed in its own folder and contains:
 agent_templates/
 ├── README.md                   # This master guide
 ├── requirements.txt            # Local development dependencies
-├── prober.py                   # Unified Vertex AI test runner & client
+├── agentkit.py                 # Shared toolkit (auth, client, control plane, streaming, MCP)
+├── prober.py                   # Unified provisioner + single-turn example runner
+├── chat.py                     # Template-agnostic interactive multi-turn chat client
 │
 ├── financial_analyst/          # Showcase 1: Smart Financial Analyst
 │   ├── agent.yaml
@@ -33,12 +35,37 @@ agent_templates/
 │   ├── slow_code.py            # Target Python code to optimize
 │   └── skills/                 # GitHub REST API helper class
 │
-└── mcp_support/                # Showcase 3: IT Support Bot (MCP)
+├── mcp_support/                # Showcase 3: IT Support Bot (MCP)
+│   ├── agent.yaml
+│   ├── AGENTS.md
+│   ├── README.md
+│   └── mcp_server.py           # Local system monitor server
+│
+└── atlassian_chat_agent/       # Showcase 4: Atlassian Chat Agent (Remote MCP)
     ├── agent.yaml
     ├── AGENTS.md
     ├── README.md
-    └── mcp_server.py           # Local system monitor server
+    ├── demo/                   # End-to-end incident-triage demo + seeder
+    └── .env.example            # Atlassian API-token credentials template
 ```
+
+### Two runners, one shared toolkit
+
+Both runners import `agentkit.py`, which holds the shared machinery (ADC auth,
+Gen AI client init, agent register/delete on the Control Plane, streaming
+interactions + renderers, and generic MCP helpers). Both are **template-agnostic**
+and live next to `agentkit.py`; each entrypoint stays thin:
+
+*   **`prober.py <template_dir>`** — the **unified provisioner + single-turn
+    example runner** for every template. It registers a *self-contained* agent
+    (baking in the template's tools, including remote MCP servers with their auth
+    headers) and runs the `examples` from `agent.yaml`. Flags: `--check` /
+    `--list-tools` (MCP preflight), `--keep-agent` (keep + print the agent id).
+*   **`chat.py`** — a template-agnostic **interactive multi-turn chat client**.
+    Point it at an existing agent (`--agent <id>`) or have it provision one from
+    any template (`--from-template <dir>`), then chat. Because prober registers
+    agents self-contained, a thin client can drive them with just
+    `{agent, input}`.
 
 ---
 
@@ -61,6 +88,44 @@ Configures the sandbox runtime in which the agent executes its tools (like `code
     *   `source`: The remote path (e.g., `gs://${GCS_BUCKET}/financial_analyst`).
     *   `target`: The absolute path where the source will be mounted inside the agent's environment (e.g., `/.agents/skills/financial_analyst`).
 *   **`network.allowlist`**: Defines network access rules for the sandbox. Example: `- domain: "*"` allows unrestricted outbound internet access.
+
+### Remote MCP Servers (`mcp_servers`)
+Connects the agent to one or more remote [MCP](https://modelcontextprotocol.io) servers. Each entry is turned into an `mcp_server` tool and baked into the agent, so the model can call the server's tools.
+*   **`name`**: A short identifier for the server (e.g., `atlassian`).
+*   **`url`**: The MCP endpoint the platform routes tool calls to.
+*   **`enabled`**: Optional (default `true`); set `false` to skip the server.
+*   **`auth`**: Optional. Per-server authentication, expressed as a raw **`headers`** map that the platform forwards to `url` (and nothing else).
+
+```yaml
+mcp_servers:
+  - name: my-server
+    url: https://mcp.example.com/v1/mcp
+    auth:
+      headers:
+        Authorization: "Bearer ${MY_API_KEY}"
+        X-Api-Version: "2024-01"
+```
+
+**Header value interpolation.** Values are resolved at runtime from your
+environment (nothing secret is stored in the file). Two forms are supported:
+
+| Syntax | Expands to | Use for |
+| --- | --- | --- |
+| `${VAR}` / `$VAR` | the env var's value | Bearer tokens, API keys, custom headers |
+| `${base64:VAR1:VAR2:...}` | base64 of the colon-joined env values | HTTP **Basic** auth |
+
+HTTP Basic requires `base64(user:pass)` (RFC 7617), not a raw `user:pass`, so use
+the `${base64:...}` transform, e.g.:
+
+```yaml
+auth:
+  headers:
+    Authorization: "Basic ${base64:MY_EMAIL:MY_TOKEN}"   # -> Basic <base64(email:token)>
+```
+
+A referenced env var that is unset raises a clear error. This `auth` block is a
+convention of this repo's runners (parsed by `agentkit`); it simply populates the
+standard `mcp_server` tool `headers` field.
 
 ### Custom Prober Extensions (`x-` prefixed)
 These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate advanced local/remote testing workflows.
@@ -119,4 +184,8 @@ Refer to the individual README files in each folder for specific prerequisites (
 3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/mcp_support/README.md)
     *   *Requires starting the local MCP server and exposing a tunnel.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/mcp_support`
+4.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
+    *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
+    *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
+    *   Chat interactively: `./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent`
 

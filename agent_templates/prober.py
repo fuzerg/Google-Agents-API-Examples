@@ -12,283 +12,285 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Unified provisioner + single-turn example runner for agent templates.
+
+`prober.py` parses a template's `agent.yaml`, provisions a **self-contained**
+custom agent on Vertex AI (Control Plane) — baking in its tools, including any
+remote MCP servers with their auth headers — and runs the template's declared
+`examples` as stateful, streaming, single-turn interactions (Data Plane).
+
+It works for every template in this repo:
+  * skills-based templates: local `skills/` are uploaded to GCS and mounted, and
+    the `x-env-secrets`, `x-output-mount`, and `x-extract-messages` extensions
+    are honored.
+  * MCP templates: each `mcp_servers` entry (with its own per-server `auth`)
+    becomes an `mcp_server` tool with an Authorization header, baked into the
+    agent so it is self-contained.
+
+Because the agent is self-contained, you can also keep it (`--keep-agent`) and
+then chat with it interactively via the sibling `chat.py` (a template-agnostic
+interactive client): `chat.py --agent <id>`.
+
+Usage:
+  python3 agent_templates/prober.py <template_dir> [prompt]
+  python3 agent_templates/prober.py <template_dir> --check        # MCP preflight
+  python3 agent_templates/prober.py <template_dir> --list-tools
+  python3 agent_templates/prober.py <template_dir> --keep-agent   # keep + print id
+
+Shared logic (auth, client, control plane, streaming) lives alongside this
+script in `agentkit.py`; interactive multi-turn chat lives in `chat.py`.
+"""
+
+import argparse
+import copy
 import os
+import re
+import subprocess
 import sys
 import time
-import re
-import yaml
 import uuid
-import json
-import base64
-import subprocess
-import requests
-import google.auth
-import google.auth.transport.requests
-from google import genai
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 prober.py <template_dir> [prompt]")
-        sys.exit(1)
-        
-    template_dir = sys.argv[1].rstrip('/')
-    template_name = os.path.basename(template_dir)
+# Make the shared toolkit importable regardless of the current working directory.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import agentkit as ak  # noqa: E402
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Provision an agent template and run its examples."
+    )
+    p.add_argument("template_dir", help="Path to the template directory.")
+    p.add_argument("prompt", nargs="?", help="Ad-hoc prompt (overrides examples).")
+    p.add_argument("--check", action="store_true",
+                   help="MCP connectivity/auth preflight, then exit (MCP templates).")
+    p.add_argument("--list-tools", action="store_true",
+                   help="List tools the template's MCP server exposes, then exit.")
+    p.add_argument("--keep-agent", action="store_true",
+                   help="Do not delete the agent after running; print its id so "
+                        "you can chat with it via `chat.py --agent <id>`.")
+    p.add_argument("--project", help="GCP project (else GOOGLE_CLOUD_PROJECT / ADC).")
+    return p.parse_args()
+
+
+def load_template(template_dir):
+    template_dir = template_dir.rstrip("/")
     if not os.path.isdir(template_dir):
         print(f"Error: Directory '{template_dir}' not found.")
         sys.exit(1)
-        
-    agent_yaml_path = os.path.join(template_dir, 'agent.yaml')
-    if not os.path.exists(agent_yaml_path):
+    agent_yaml = os.path.join(template_dir, "agent.yaml")
+    if not os.path.exists(agent_yaml):
         print(f"Error: agent.yaml not found in {template_dir}")
         sys.exit(1)
-        
-    # 1. Resolve GCP Authentication & Project
-    try:
-        credentials, project_id = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
-        access_token = credentials.token
-    except Exception as e:
-        print(f"Authentication failed: {e}")
-        print("Please run: gcloud auth application-default login")
-        sys.exit(1)
-        
-    if not project_id:
-        print("GCP Project ID could not be resolved. Please run: gcloud config set project <PROJECT_ID>")
-        sys.exit(1)
-        
-    print(f"Using GCP Project: {project_id}")
-    
-    # 2. Resolve Environment Variables & Config
-    gcs_bucket = os.environ.get("GCS_BUCKET_NAME", f"{project_id}-agent-skills")
-    os.environ["GCS_BUCKET"] = gcs_bucket
-    
+
+    # Auto-load the template's .env so credentials referenced by agent.yaml's
+    # per-server `auth` blocks are available without manually sourcing it.
+    ak.load_dotenv(os.path.join(template_dir, ".env"))
+
+    # MCP self-hosted templates normalize MCP_SERVER_URL -> /sse before expansion.
     mcp_url = os.environ.get("MCP_SERVER_URL")
     if mcp_url:
-        if not mcp_url.endswith("/sse") and not mcp_url.endswith("/sse/"):
+        if not mcp_url.rstrip("/").endswith("/sse"):
             mcp_url = mcp_url.rstrip("/") + "/sse"
         os.environ["MCP_SERVER_URL"] = mcp_url
 
+    config = ak.load_config(agent_yaml, expandvars=True)
+    return template_dir, config
 
-    
-    with open(agent_yaml_path, 'r') as f:
-        config = yaml.safe_load(os.path.expandvars(f.read()))
-    
-    agent_id = f"{config.get('id')}-{uuid.uuid4().hex[:8]}"
-    base_agent = config.get('base_agent', 'antigravity-preview-05-2026')
-    description = config.get('description', '')
-    tools = config.get('tools', [])
-    env_config = config.get('environment', {})
-    
-    # Extract system instruction (prioritize AGENTS.md if it exists)
-    system_instruction = config.get('instructions')
-    agents_md_path = os.path.join(template_dir, 'AGENTS.md')
-    if os.path.exists(agents_md_path):
-        with open(agents_md_path, 'r') as f:
-            system_instruction = f.read()
-            
-    # 3. Handle Skill Upload to GCS if needed
-    local_skills_dir = os.path.join(template_dir, 'skills')
-    if os.path.exists(local_skills_dir):
-        
-        # Generic Secret Injection: If agent.yaml defines x-env-secrets, inject them into skill .env files
-        secrets_config = config.get("x-env-secrets", {})
-        created_env_files = []
-        for skill_name, secrets in secrets_config.items():
-            skill_dir = os.path.join(local_skills_dir, skill_name)
-            if os.path.exists(skill_dir):
-                env_path = os.path.join(skill_dir, '.env')
-                with open(env_path, 'w') as f:
-                    for secret in secrets:
-                        val = os.environ.get(secret, "")
-                        f.write(f'{secret}="{val}"\n')
-                created_env_files.append(env_path)
-                
+
+def assemble_tools(config):
+    """Agent tools = explicit `tools` + MCP tools derived from `mcp_servers`.
+
+    Each MCP server carries its own per-server `auth` block, so `build_mcp_tools`
+    builds a distinct Authorization header per server.
+    """
+    tools = list(config.get("tools", []) or [])
+    servers = ak.resolve_servers(config)
+    if servers:
+        tools.extend(ak.build_mcp_tools(servers))
+    return tools, servers
+
+
+def upload_skills(template_dir, config, project_id, gcs_bucket):
+    """Inject x-env-secrets, then upload local skills/ to GCS (skills templates)."""
+    local_skills_dir = os.path.join(template_dir, "skills")
+    if not os.path.exists(local_skills_dir):
+        return
+
+    secrets_config = config.get("x-env-secrets", {})
+    created_env_files = []
+    for skill_name, secrets in secrets_config.items():
+        skill_dir = os.path.join(local_skills_dir, skill_name)
+        if os.path.exists(skill_dir):
+            env_path = os.path.join(skill_dir, ".env")
+            with open(env_path, "w") as f:
+                for secret in secrets:
+                    f.write(f'{secret}="{os.environ.get(secret, "")}"\n')
+            created_env_files.append(env_path)
+
+    try:
+        bucket_url = f"gs://{gcs_bucket}"
+        exists = subprocess.run(
+            ["gcloud", "storage", "buckets", "describe", bucket_url],
+            capture_output=True,
+        ).returncode == 0
+        if not exists:
+            print(f"Creating GCS bucket {bucket_url}...")
+            subprocess.run(
+                ["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"],
+                check=True,
+            )
+        for skill_name in os.listdir(local_skills_dir):
+            skill_path = os.path.join(local_skills_dir, skill_name)
+            if os.path.isdir(skill_path):
+                print(f"Uploading skill files from '{skill_path}' to {bucket_url}/...")
+                subprocess.run(
+                    ["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"],
+                    check=True,
+                )
+    finally:
+        for env_file in created_env_files:
+            if os.path.exists(env_file):
+                os.remove(env_file)
+
+
+def run_examples(client, agent_resource, template_dir, config, agent_id,
+                 gcs_bucket, env_config, prompt_override):
+    """Run each example as a single-turn streaming interaction (+ x-* handling)."""
+    if prompt_override:
+        examples = [{"title": "manual_run", "prompt": prompt_override}]
+    else:
+        examples = config.get("examples", []) or [{"title": "default_run", "prompt": "Hello"}]
+
+    output_mount = config.get("x-output-mount")
+    extract_msgs = config.get("x-extract-messages", [])
+
+    for i, example in enumerate(examples):
+        prompt = example.get("prompt", "Hello")
+        title = example.get("title", f"example_{i}")
+        safe_title = re.sub(r"[^a-zA-Z0-9_-]", "_", title).lower()
+
+        # Per-interaction environment for output-mount templates.
+        interaction_environment = None
+        example_gcs_output = None
+        if output_mount:
+            example_gcs_output = f"gs://{gcs_bucket}/output_{agent_id}_{safe_title}"
+            sources = copy.deepcopy(env_config.get("sources", []))
+            sources.append({"type": "gcs", "source": example_gcs_output, "target": output_mount})
+            interaction_environment = ak.default_base_environment(
+                {**env_config, "sources": sources}
+            )
+
+        ak.rule(f"[{i + 1}/{len(examples)}] {title}")
+        print(f"Prompt: {prompt}\n")
         try:
-            bucket_url = f"gs://{gcs_bucket}"
-            bucket_exists = subprocess.run(["gcloud", "storage", "buckets", "describe", bucket_url], capture_output=True).returncode == 0
-            if not bucket_exists:
-                print(f"Creating GCS bucket {bucket_url}...")
-                subprocess.run(["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"], check=True)
+            final_text, _ = ak.stream_interaction(
+                client, agent_resource, prompt,
+                environment=interaction_environment,
+                renderer=ak.SimpleRenderer(),
+            )
+            print(f"\nInteraction {i + 1} finished successfully.")
 
-            for skill_name in os.listdir(local_skills_dir):
-                skill_path = os.path.join(local_skills_dir, skill_name)
-                if os.path.isdir(skill_path):
-                    print(f"Uploading skill files from '{skill_path}' to {bucket_url}/{skill_name}...")
-                    subprocess.run(["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"], check=True)
-        finally:
-            for env_file in created_env_files:
-                if os.path.exists(env_file):
-                    os.remove(env_file)
-
-        # 4. Control Plane: Register custom agent on Vertex AI
-        LOCATION = "global"
-        BASE_URL = f"https://aiplatform.googleapis.com/v1beta1/projects/{project_id}/locations/{LOCATION}"
-        AGENT_RESOURCE_NAME = f"projects/{project_id}/locations/{LOCATION}/agents/{agent_id}"
-        
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json; charset=utf-8"
-        }
-        
-        agent_payload = {
-            "id": agent_id,
-            "base_agent": base_agent,
-            "description": description,
-            "system_instruction": system_instruction,
-            "tools": tools,
-            "base_environment": {
-                "type": env_config.get('type', 'remote'),
-                "sources": env_config.get('sources', []),
-            }
-        }
-        if 'network' in env_config:
-            agent_payload["base_environment"]["network"] = env_config["network"]
-            
-        print(f"Registering custom agent '{agent_id}' via Control Plane...")
-        response = requests.post(f"{BASE_URL}/agents", headers=headers, json=agent_payload)
-        if response.status_code != 200 and response.status_code != 409:
-            raise Exception(f"Failed to create agent: {response.text}")
-            
-        if response.status_code == 409:
-            print(f"Agent '{agent_id}' already exists. Re-using existing agent.\n")
-        else:
-            operation = response.json()
-            operation_name = operation["name"]
-            print("Waiting for agent registration to complete...")
-            while True:
-                poll_resp = requests.get(f"https://aiplatform.googleapis.com/v1beta1/{operation_name}", headers=headers)
-                poll_data = poll_resp.json()
-                if poll_data.get("done"):
-                    if "error" in poll_data:
-                        raise Exception(f"Agent registration failed: {poll_data['error']}")
-                    print("Agent registered successfully and is ready!\n")
-                    break
+            if output_mount and example_gcs_output:
+                target_name = os.path.basename(output_mount.rstrip("/"))
+                local_output_dir = os.path.join(template_dir, f"{target_name}_{safe_title}")
+                os.makedirs(local_output_dir, exist_ok=True)
+                print(f"\nDownloading output files from {example_gcs_output}/* ...")
                 time.sleep(3)
-                
-        # 5. Data Plane: Start Stateful Streaming Interaction
-        try:
-            # Determine prompt input
-            examples_config = config.get('examples', [])
-            if len(sys.argv) > 2:
-                examples = [{"title": "manual_run", "prompt": sys.argv[2]}]
-            elif examples_config:
-                examples = examples_config
-            else:
-                examples = [{"title": "default_run", "prompt": "Hello"}]
-            
-            # Initialize Google Gen AI client with Enterprise credentials
-            os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "true"
-            client = genai.Client(enterprise=True, project=project_id, location=LOCATION)
-            
-            import copy
-            for i, example in enumerate(examples):
-                prompt = example.get('prompt', 'Hello')
-                example_title = example.get('title', f"example_{i}")
-                safe_title = re.sub(r'[^a-zA-Z0-9_-]', '_', example_title).lower()
-                
-                # Prepare interaction-specific environment if output_mount is present
-                sources = copy.deepcopy(env_config.get('sources', []))
-                output_mount = config.get("x-output-mount")
-                interaction_environment = None
-                if output_mount:
-                    # Create a unique GCS folder for this example
-                    example_gcs_output = f"gs://{gcs_bucket}/output_{agent_id}_{safe_title}"
-                    sources.append({
-                        "type": "gcs",
-                        "source": example_gcs_output,
-                        "target": output_mount
-                    })
-                    interaction_environment = {
-                        "type": env_config.get('type', 'remote'),
-                        "sources": sources,
-                    }
-                    if 'network' in env_config:
-                        interaction_environment["network"] = env_config["network"]
-    
-                log_content = ""
-                print(f"Starting Stateful Streaming Interaction (Data Plane) - Run {i+1}/{len(examples)}...")
-                print(f"Prompt: {prompt}")
-                print("--------------------------------------------------------------------------------\n")
-                
-                try:
-                    # Setup kwargs for interaction create
-                    create_kwargs = {
-                        "agent": AGENT_RESOURCE_NAME,
-                        "input": prompt,
-                        "stream": True,
-                        "background": True,
-                        "store": True,
-                        "timeout": 900
-                    }
-                    if interaction_environment:
-                        create_kwargs["environment"] = interaction_environment
-                        
-                    response_stream = client.interactions.create(**create_kwargs)
-    
-                    for event in response_stream:
-                        event_type = getattr(event, "event_type", None)
-                        if event_type == "step.delta":
-                            delta = event.delta
-                            delta_type = getattr(delta, "type", None)
-                            if delta_type == "text":
-                                print(delta.text, end="", flush=True)
-                                log_content += delta.text
-                            elif delta_type == "code_execution_result":
-                                print(delta.result, end="", flush=True)
-                                log_content += delta.result
-                                
-                    print("\n--------------------------------------------------------------------------------")
-                    print(f"Interaction {i+1} finished successfully.\n")
-                
-                    # Download output path
-                    if output_mount:
-                        target_name = os.path.basename(output_mount.rstrip('/'))
-                        local_output_dir = os.path.join(template_dir, f"{target_name}_{safe_title}")
-                        os.makedirs(local_output_dir, exist_ok=True)
-                        
-                        print(f"\nDownloading output files from Google Cloud Storage mount...")
-                        print(f"Source: {example_gcs_output}/*")
-                        print(f"Target: {local_output_dir}")
-                        
-                        time.sleep(3)
-                        
-                        res = subprocess.run(["gcloud", "storage", "cp", "-r", f"{example_gcs_output}/*", local_output_dir], capture_output=True, text=True)
-                        if res.returncode == 0:
-                            print(f"✨ Output files downloaded and saved locally to: {local_output_dir}")
-                        else:
-                            print(f"Warning: Failed to download output files from GCS: {res.stderr}")
-    
-                    # Extract and print custom messages defined in agent.yaml
-                    extract_msgs = config.get("x-extract-messages", [])
-                    if extract_msgs:
-                        for ext in extract_msgs:
-                            start_marker = ext.get("start")
-                            end_marker = ext.get("end")
-                            msg_template = ext.get("message", "Extracted: {}")
-                            if start_marker in log_content and end_marker in log_content:
-                                start_idx = log_content.find(start_marker) + len(start_marker)
-                                end_idx = log_content.find(end_marker, start_idx)
-                                if end_idx > start_idx:
-                                    extracted_value = log_content[start_idx:end_idx].strip()
-                                    print(f"\n✨ {msg_template.format(extracted_value)}")
-                except Exception as e:
-                    print(f"An error occurred during interaction {i+1}: {e}")
-                    
-        except Exception as e:
-            print(f"An error occurred: {e}")
-        finally:
-            # 7. Control Plane Resource Cleanup
-            print(f"\nCleaning up: Deleting agent '{agent_id}' (Control Plane)...")
-            credentials.refresh(auth_req)
-            headers["Authorization"] = f"Bearer {credentials.token}"
-            cleanup_resp = requests.delete(f"{BASE_URL}/agents/{agent_id}", headers=headers)
-            if cleanup_resp.status_code == 200:
-                print("Agent deleted successfully.")
-            else:
-                print(f"Failed to delete agent resource: {cleanup_resp.text}")
+                res = subprocess.run(
+                    ["gcloud", "storage", "cp", "-r", f"{example_gcs_output}/*", local_output_dir],
+                    capture_output=True, text=True,
+                )
+                if res.returncode == 0:
+                    ak.ok(f"Output files saved to: {local_output_dir}")
+                else:
+                    ak.warn(f"Failed to download output files: {res.stderr}")
+
+            for ext in extract_msgs:
+                start, end = ext.get("start"), ext.get("end")
+                template = ext.get("message", "Extracted: {}")
+                if start in final_text and end in final_text:
+                    s = final_text.find(start) + len(start)
+                    e = final_text.find(end, s)
+                    if e > s:
+                        print(f"\n\u2728 {template.format(final_text[s:e].strip())}")
+        except Exception as e:  # noqa: BLE001
+            ak.err(f"An error occurred during interaction {i + 1}: {e}")
+
+
+def main() -> int:
+    args = parse_args()
+    template_dir, config = load_template(args.template_dir)
+
+    # --check / --list-tools: MCP preflight only (no ADC / Control Plane needed).
+    if args.check or args.list_tools:
+        servers = ak.resolve_servers(config)
+        if not servers:
+            ak.err("This template declares no `mcp_servers`; nothing to preflight.")
+            return 1
+        good = ak.preflight_mcp(servers)
+        return 0 if good else 2
+
+    # Auth + project + client.
+    try:
+        credentials, adc_project = ak.resolve_adc()
+        token = ak.access_token(credentials)
+    except Exception as e:  # noqa: BLE001
+        print(f"Authentication failed: {e}\nRun: gcloud auth application-default login")
+        return 1
+    project_id = args.project or os.environ.get("GOOGLE_CLOUD_PROJECT") or adc_project
+    if not project_id:
+        print("GCP Project ID could not be resolved. Run: gcloud config set project <ID>")
+        return 1
+    print(f"Using GCP Project: {project_id}")
+
+    gcs_bucket = os.environ.get("GCS_BUCKET_NAME", f"{project_id}-agent-skills")
+    os.environ["GCS_BUCKET"] = gcs_bucket
+    # Re-expand config now that GCS_BUCKET is set (sources reference it).
+    _, config = load_template(args.template_dir)
+    tools, servers = assemble_tools(config)
+
+    system_instruction = config.get("instructions")
+    system_instruction = ak.load_system_instruction(template_dir) or system_instruction
+
+    agent_id = f"{config.get('id')}-{uuid.uuid4().hex[:8]}"
+    base_agent = config.get("base_agent", ak.DEFAULT_BASE_AGENT)
+    description = config.get("description", "")
+    env_config = config.get("environment", {}) or {}
+
+    # Upload skills to GCS if the template has a skills/ dir.
+    upload_skills(template_dir, config, project_id, gcs_bucket)
+
+    # Control Plane: register the self-contained agent (tools baked in).
+    base_environment = ak.default_base_environment(env_config, allow_network=bool(servers))
+    print(f"Registering agent '{agent_id}' via Control Plane...")
+    try:
+        client, project_id = ak.init_genai_client(project=project_id)
+        agent_resource = ak.register_agent(
+            project=project_id, token=token, agent_id=agent_id,
+            base_agent=base_agent, description=description,
+            system_instruction=system_instruction, tools=tools,
+            base_environment=base_environment,
+        )
+        ak.ok(f"Agent registered: {agent_resource}")
+    except Exception as e:  # noqa: BLE001
+        print(f"Failed to register agent: {e}")
+        return 1
+
+    # Data Plane: run examples, then clean up (unless --keep-agent).
+    try:
+        run_examples(client, agent_resource, template_dir, config, agent_id,
+                     gcs_bucket, env_config, args.prompt)
+    finally:
+        if args.keep_agent:
+            ak.rule("Agent kept")
+            ak.ok(f"Agent id: {agent_id}")
+            print(f"Chat with it:  chat.py --agent {agent_id} --project {project_id}")
+        else:
+            print(f"\nCleaning up: deleting agent '{agent_id}'...")
+            ak.delete_agent(project_id, ak.access_token(credentials), agent_id)
+            ak.ok("Agent deleted.")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
