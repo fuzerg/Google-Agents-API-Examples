@@ -89,6 +89,44 @@ Configures the sandbox runtime in which the agent executes its tools (like `code
     *   `target`: The absolute path where the source will be mounted inside the agent's environment (e.g., `/.agents/skills/financial_analyst`).
 *   **`network.allowlist`**: Defines network access rules for the sandbox. Example: `- domain: "*"` allows unrestricted outbound internet access.
 
+### Remote MCP Servers (`mcp_servers`)
+Connects the agent to one or more remote [MCP](https://modelcontextprotocol.io) servers. Each entry is turned into an `mcp_server` tool and baked into the agent, so the model can call the server's tools.
+*   **`name`**: A short identifier for the server (e.g., `atlassian`).
+*   **`url`**: The MCP endpoint the platform routes tool calls to.
+*   **`enabled`**: Optional (default `true`); set `false` to skip the server.
+*   **`auth`**: Optional. Per-server authentication, expressed as a raw **`headers`** map that the platform forwards to `url` (and nothing else).
+
+```yaml
+mcp_servers:
+  - name: my-server
+    url: https://mcp.example.com/v1/mcp
+    auth:
+      headers:
+        Authorization: "Bearer ${MY_API_KEY}"
+        X-Api-Version: "2024-01"
+```
+
+**Header value interpolation.** Values are resolved at runtime from your
+environment (nothing secret is stored in the file). Two forms are supported:
+
+| Syntax | Expands to | Use for |
+| --- | --- | --- |
+| `${VAR}` / `$VAR` | the env var's value | Bearer tokens, API keys, custom headers |
+| `${base64:VAR1:VAR2:...}` | base64 of the colon-joined env values | HTTP **Basic** auth |
+
+HTTP Basic requires `base64(user:pass)` (RFC 7617), not a raw `user:pass`, so use
+the `${base64:...}` transform, e.g.:
+
+```yaml
+auth:
+  headers:
+    Authorization: "Basic ${base64:MY_EMAIL:MY_TOKEN}"   # -> Basic <base64(email:token)>
+```
+
+A referenced env var that is unset raises a clear error. This `auth` block is a
+convention of this repo's runners (parsed by `agentkit`); it simply populates the
+standard `mcp_server` tool `headers` field.
+
 ### Custom Prober Extensions (`x-` prefixed)
 These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate advanced local/remote testing workflows.
 *   **`x-output-mount`**: Specifies an absolute path inside the agent's sandbox (e.g., `/workspace/output`) where generated files (like PDFs or charts) will be saved. `prober.py` dynamically creates a unique GCS bucket folder for each example, maps it to this target during execution, and then automatically syncs all generated files back to your local workspace (`output_{example_title}`) when the interaction completes.

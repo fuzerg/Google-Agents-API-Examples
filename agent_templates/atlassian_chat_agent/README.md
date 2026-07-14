@@ -51,43 +51,20 @@ The runners live one level up and are **template-agnostic** (both share
 
 ## How authentication works
 
-The Rovo MCP server supports **non-interactive API-token auth** — the client
-sends credentials in the `Authorization` header (no browser consent). The
-per-server `auth` block in `agent.yaml` (parsed by `agentkit`, a **repo
-convention** — not a platform standard) is a **raw `headers` map** whose values
-reference env vars. Values support `${VAR}` and a `${base64:VAR1:VAR2}` transform
-(base64 of the colon-joined values) for HTTP Basic:
+The agent calls Jira/Confluence through the Rovo MCP server using **your Atlassian
+API token**, sent as an HTTP Basic `Authorization` header. You just put
+`ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` in `.env` (see [Setup](#setup)) —
+`agent.yaml` turns them into the header, which is baked into the self-contained
+agent at registration. The platform keeps it confidential to the Rovo URL and
+never returns it.
 
-```yaml
-mcp_servers:
-  - name: atlassian
-    url: https://mcp.atlassian.com/v1/mcp
-    auth:
-      headers:
-        # HTTP Basic requires base64(email:token) — RFC 7617, not Atlassian-specific.
-        Authorization: "Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}"
-```
+For the generic `mcp_servers` → `auth.headers` format and `${...}` interpolation
+used here, see the [root templates README](../README.md#remote-mcp-servers-mcp_servers).
 
-So you just drop `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` into `.env`.
-Alternatives:
-- **Service-account API key** → `Authorization: "Bearer ${ATLASSIAN_API_KEY}"`
-  (Rovo rejects personal tokens as Bearer).
-- **Any other server** → any header name(s), e.g. `X-API-Key: "${SOME_TOKEN}"`.
-
-> **Why `${base64:...}`?** HTTP Basic isn't `Basic email:token` — the credentials
-> must be **base64-encoded** (`Basic <base64(email:token)>`). That's a generic
-> HTTP standard, so the transform base64-encodes for you rather than making you
-> precompute it.
-
-This raw-headers form just populates the standardized `mcp_server` tool `headers`
-map that the platform forwards to the MCP URL. The header(s) are baked into the
-agent at registration; the platform keeps them **confidential to the MCP URL** and
-never returns them.
-
-> **cloudId matters.** With API-token auth the token is **not** bound to a single
-> Atlassian site, and every Jira/Confluence tool needs a `cloudId`. The Rovo MCP
-> tool schemas make `getAccessibleAtlassianResources` the entry point, so the
-> model resolves the `cloudId` on its own and reuses it for the conversation.
+> **cloudId** — With API-token auth the token isn't bound to a single Atlassian
+> site, so every Jira/Confluence tool needs a `cloudId`. The Rovo tool schemas
+> make `getAccessibleAtlassianResources` the entry point, so the model resolves it
+> on its own.
 
 ---
 
@@ -143,28 +120,42 @@ gcloud config set project YOUR_PROJECT_ID
 gcloud services enable aiplatform.googleapis.com
 ```
 
-### 3. Create an Atlassian API token
-Create a personal API token (with the scopes you need) at
-[id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens?autofillToken&expiryDays=max&appId=mcp&selectedScopes=all).
-Note the **email** of the token owner.
+### 3. Create your Atlassian API token
 
-> To enable writes (create/update issues, transitions, create/update pages),
-> the token's scopes and the org's permission groups must include the
-> `write_jira` / `write_confluence` groups. Read/search work with read scopes.
+You need a **scoped** API token (a plain "classic" token won't work with the Rovo
+MCP server). Step by step:
+
+1. Sign in to your Atlassian account, then open the API tokens page:
+   **https://id.atlassian.com/manage-profile/security/api-tokens**
+2. Click **Create API token with scopes** (not "Create API token").
+3. Give it a **name** (e.g. `gemini-rovo-mcp`) and an **expiry**, then click **Next**.
+4. Select the **app**: choose the option for Jira/Confluence, then click **Next**.
+5. Select **scopes** — the read (and, if you want the agent to make changes, write)
+   scopes for Jira and Confluence, e.g. `read:jira-work`, `write:jira-work`,
+   `read:confluence-content.all`, `write:confluence-content`. Click **Next**.
+   *(Shortcut: this [deep link](https://id.atlassian.com/manage-profile/security/api-tokens?autofillToken&expiryDays=max&appId=mcp&selectedScopes=all)
+   pre-selects the MCP scopes.)*
+6. Click **Create**, then **Copy** the token — it is shown **only once**.
+7. Note the **email address** of the account that owns the token.
+
+> **Writes** (create/update issues, transitions, create/update pages) also require
+> your org admin to grant the `write_jira` / `write_confluence` permission groups
+> for the Rovo MCP server (step 1). Read/search work with read scopes.
 
 ### 4. Provide your credentials
-Copy the example env file and fill it in:
+Copy the example env file and paste in your email + token (and your site URL):
 ```bash
 cd agent_templates/atlassian_chat_agent
 cp .env.example .env
-$EDITOR .env    # set ATLASSIAN_EMAIL + ATLASSIAN_API_TOKEN (+ ATLASSIAN_SITE)
+$EDITOR .env
 ```
-`agent.yaml` builds the Basic auth header from `ATLASSIAN_EMAIL` +
-`ATLASSIAN_API_TOKEN` (via `${base64:...}` — see
-[How authentication works](#how-authentication-works)); the demo seeder also uses
-`ATLASSIAN_SITE`. Both `prober.py` and `chat.py` **auto-load this template's
-`.env`**, so you don't need to source it manually (shell-exported vars still take
-precedence).
+```bash
+ATLASSIAN_EMAIL="you@example.com"           # the token owner's email (step 3.7)
+ATLASSIAN_API_TOKEN="your_scoped_api_token"  # the token you copied (step 3.6)
+ATLASSIAN_SITE="https://your-site.atlassian.net"
+```
+Both `prober.py` and `chat.py` **auto-load this template's `.env`**, so you don't
+need to source it manually (shell-exported vars still take precedence).
 
 ### 5. Install dependencies
 ```bash
