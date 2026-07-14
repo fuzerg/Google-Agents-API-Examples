@@ -21,18 +21,16 @@ description: >-
 # Reference:
 #   https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/
 #
-# Auth is a raw `headers` map whose values reference env vars (${VAR}); the
-# runners never see raw credentials in this file. The Rovo MCP server supports
-# non-interactive API-token auth (no browser); your Atlassian org admin must
-# first ENABLE "authentication via API token", and the token must carry the
-# required product scopes.
+# Auth is a raw `headers` map whose values reference env vars; the runners never
+# see raw credentials in this file. Header values support `${VAR}` and a
+# `${base64:VAR1:VAR2}` transform (base64 of the colon-joined values) for HTTP
+# Basic. The Rovo MCP server supports non-interactive API-token auth (no browser);
+# your Atlassian org admin must first ENABLE "authentication via API token", and
+# the token must carry the required product scopes.
 #
-#   Personal API token  -> Authorization: Basic <base64(email:api_token)>
-#   Service-account key  -> Authorization: Bearer <api_key>
+#   Personal API token  -> Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}
+#   Service-account key  -> Bearer ${ATLASSIAN_API_KEY}
 #
-# Set ATLASSIAN_AUTH_HEADER to the FULL header value, e.g.:
-#   ATLASSIAN_AUTH_HEADER="Basic $(printf '%s' "$EMAIL:$API_TOKEN" | base64)"
-#   ATLASSIAN_AUTH_HEADER="Bearer <service-account-api-key>"
 # (Rovo rejects personal tokens sent as Bearer.) Never commit real tokens.
 # Reference:
 #   https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/
@@ -43,7 +41,7 @@ mcp_servers:
     enabled: true
     auth:
       headers:
-        Authorization: "${ATLASSIAN_AUTH_HEADER}"
+        Authorization: "Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}"
 
 # Sequential prompts run by chat.py. Each example is an independent, stateful
 # conversation (interactive multi-turn is available via `chat.py --interactive`).

@@ -37,6 +37,7 @@ Use current models only (`gemini-2.5-pro`, `gemini-3-flash-preview`, ...);
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -203,32 +204,57 @@ def load_dotenv(path: str, override: bool = False) -> int:
 # Generic MCP helpers.
 # ---------------------------------------------------------------------------
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+# ${base64:VAR1[:VAR2[:...]]} -> base64 of the colon-joined env values.
+# This produces standard HTTP Basic credentials, e.g.
+#   Authorization: "Basic ${base64:EMAIL_ENV:TOKEN_ENV}"
+_B64_REF = re.compile(r"\$\{base64:([A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)*)\}")
+
+
+def _env(name: str) -> str:
+    val = os.environ.get(name)
+    if val is None:
+        raise RuntimeError(f"Header value references unset env var: {name}")
+    return val
 
 
 def _interpolate_env(value: str) -> str:
-    """Expand `${VAR}` / `$VAR` references in `value`, erroring on unset vars."""
-    def repl(m: "re.Match[str]") -> str:
-        name = m.group(1) or m.group(2)
-        val = os.environ.get(name)
-        if val is None:
-            raise RuntimeError(f"Header value references unset env var: {name}")
-        return val
-    return _ENV_REF.sub(repl, value)
+    """Expand references in a header value.
+
+    Supports:
+      * `${VAR}` / `$VAR`            -> the env var's value
+      * `${base64:VAR1:VAR2:...}`    -> base64(":".join(env values)); the standard
+                                        HTTP Basic form is `${base64:USER:PASS}`
+    Unset referenced env vars raise a clear error.
+    """
+    def b64repl(m: "re.Match[str]") -> str:
+        joined = ":".join(_env(n) for n in m.group(1).split(":"))
+        return base64.b64encode(joined.encode("utf-8")).decode("ascii")
+
+    def envrepl(m: "re.Match[str]") -> str:
+        return _env(m.group(1) or m.group(2))
+
+    # base64 first (its output has no `$`, so it's safe from the second pass).
+    value = _B64_REF.sub(b64repl, value)
+    return _ENV_REF.sub(envrepl, value)
 
 
 def build_auth_headers(auth_cfg: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
     """Build the HTTP headers for a single MCP server from its `auth` block.
 
     Auth is declared per MCP server in agent.yaml as a raw `headers` map whose
-    values reference env vars via `${VAR}` / `$VAR` (no credential values are
-    hardcoded). This maps directly onto the `mcp_server` tool's `headers` field:
+    values reference env vars (no credential values are hardcoded). Header values
+    support `${VAR}` / `$VAR` and a `${base64:...}` transform for HTTP Basic. This
+    maps directly onto the `mcp_server` tool's `headers` field:
 
       mcp_servers:
         - name: my-server
           url: https://...
           auth:
             headers:
-              Authorization: "${MY_AUTH_HEADER}"   # e.g. "Basic <b64>" or "Bearer <k>"
+              # HTTP Basic (base64 of "email:token") — drop in the two env vars:
+              Authorization: "Basic ${base64:MY_EMAIL:MY_TOKEN}"
+              # or Bearer:   Authorization: "Bearer ${MY_API_KEY}"
+              # or any custom header:
               X-API-Key: "${MY_API_KEY}"
 
     Returns None when the server has no `auth` block (or it declares no headers).
