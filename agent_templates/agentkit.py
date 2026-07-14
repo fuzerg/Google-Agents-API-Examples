@@ -179,53 +179,55 @@ def load_system_instruction(template_dir: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Generic MCP helpers.
 # ---------------------------------------------------------------------------
-def build_auth_header(
-    auth_cfg: Optional[Dict[str, Any]],
-    *,
-    mode: Optional[str] = None,
-    email: Optional[str] = None,
-    api_token: Optional[str] = None,
-    api_key: Optional[str] = None,
-) -> Optional[str]:
-    """Build an `Authorization` header for an MCP server from an `auth` block.
+def build_auth_header(auth_cfg: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Build an `Authorization` header for a single MCP server from its `auth`.
 
-    The `auth` block (from agent.yaml) names the env vars that hold credentials:
-      auth:
-        mode: basic            # basic | bearer
-        email_env: ATLASSIAN_EMAIL
-        api_token_env: ATLASSIAN_API_TOKEN
-        api_key_env: ATLASSIAN_API_KEY
-    Explicit `mode`/`email`/`api_token`/`api_key` override the env-resolved values.
-    Returns None when no auth is configured.
+    Auth is declared per MCP server in agent.yaml and names the env vars that
+    hold the credentials (no credential values or env-var names are hardcoded):
+
+      mcp_servers:
+        - name: my-server
+          url: https://...
+          auth:
+            mode: basic            # basic | bearer
+            email_env: MY_EMAIL        # basic: env var holding the account email
+            api_token_env: MY_TOKEN    # basic: env var holding the API token
+            # mode: bearer
+            # api_key_env: MY_API_KEY  # bearer: env var holding the API key
+
+    Returns None when the server has no `auth` block.
     """
-    if not auth_cfg and not (mode or email or api_token or api_key):
+    if not auth_cfg:
         return None
-    auth_cfg = auth_cfg or {}
-    mode = (mode or auth_cfg.get("mode", "basic")).lower()
-
-    email_env = auth_cfg.get("email_env", "ATLASSIAN_EMAIL")
-    token_env = auth_cfg.get("api_token_env", "ATLASSIAN_API_TOKEN")
-    key_env = auth_cfg.get("api_key_env", "ATLASSIAN_API_KEY")
+    mode = (auth_cfg.get("mode") or "basic").lower()
 
     if mode == "basic":
-        email = email or os.environ.get(email_env)
-        api_token = api_token or os.environ.get(token_env)
+        email_env = auth_cfg.get("email_env")
+        token_env = auth_cfg.get("api_token_env")
+        if not email_env or not token_env:
+            raise RuntimeError(
+                "Basic auth requires 'email_env' and 'api_token_env' in the MCP "
+                "server's `auth` block."
+            )
+        email = os.environ.get(email_env)
+        api_token = os.environ.get(token_env)
         if not email or not api_token:
             raise RuntimeError(
-                f"Basic auth needs an email + API token. Set {email_env} and "
-                f"{token_env} (or pass them explicitly)."
+                f"Basic auth: set env vars {email_env} and {token_env}."
             )
         raw = f"{email}:{api_token}".encode("utf-8")
         info(f"Auth: Basic as {email} (token {mask(api_token)})")
         return "Basic " + base64.b64encode(raw).decode("ascii")
 
     if mode == "bearer":
-        api_key = api_key or os.environ.get(key_env)
-        if not api_key:
+        key_env = auth_cfg.get("api_key_env")
+        if not key_env:
             raise RuntimeError(
-                f"Bearer auth needs a service-account API key. Set {key_env} "
-                "(or pass it explicitly)."
+                "Bearer auth requires 'api_key_env' in the MCP server's `auth` block."
             )
+        api_key = os.environ.get(key_env)
+        if not api_key:
+            raise RuntimeError(f"Bearer auth: set env var {key_env}.")
         info(f"Auth: Bearer (key {mask(api_key)})")
         return "Bearer " + api_key
 
@@ -236,30 +238,33 @@ def resolve_servers(
     config: Dict[str, Any],
     servers_filter: Optional[List[str]] = None,
     url_override: Optional[str] = None,
-) -> List[Dict[str, str]]:
-    """Return the list of {name,url} MCP servers from config `mcp_servers`."""
+) -> List[Dict[str, Any]]:
+    """Return the selected MCP servers as {name, url, auth} dicts.
+
+    Each server's per-server `auth` block (if any) is carried through so callers
+    can build a distinct Authorization header per server.
+    """
     selected = []
     for s in config.get("mcp_servers", []) or []:
         name = s.get("name")
         url = url_override or s.get("url")
         if not name or not url:
             continue
-        if servers_filter is not None:
-            if name in servers_filter:
-                selected.append({"name": name, "url": url})
-        elif s.get("enabled", True):
-            selected.append({"name": name, "url": url})
+        if servers_filter is not None and name not in servers_filter:
+            continue
+        if servers_filter is None and not s.get("enabled", True):
+            continue
+        selected.append({"name": name, "url": url, "auth": s.get("auth")})
     return selected
 
 
-def build_mcp_tools(
-    servers: List[Dict[str, str]], auth_header: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Turn a server list into `mcp_server` tool specs.
+def build_mcp_tools(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn a server list into `mcp_server` tool specs, one header per server.
 
-    The same `mcp_server` tool shape is accepted both baked into the agent
-    (Control Plane) and per interaction (Data Plane). (The Control Plane rejects
-    the older `mcp` type; use `mcp_server`.)
+    Each server carries its own `auth` block, so a distinct Authorization header
+    is built per server. The same `mcp_server` tool shape is accepted both baked
+    into the agent (Control Plane) and per interaction (Data Plane); the Control
+    Plane rejects the older `mcp` type, so use `mcp_server`.
     """
     tools = []
     for s in servers:
@@ -268,8 +273,9 @@ def build_mcp_tools(
             "name": s["name"],
             "url": s["url"],
         }
-        if auth_header:
-            tool["headers"] = {"Authorization": auth_header}
+        header = build_auth_header(s.get("auth"))
+        if header:
+            tool["headers"] = {"Authorization": header}
         tools.append(tool)
     return tools
 
@@ -378,13 +384,13 @@ def mcp_list_tools(
         return False, [], f"request failed: {e}"
 
 
-def preflight_mcp(servers: List[Dict[str, str]], auth_header: Optional[str]) -> bool:
-    """Run mcp_list_tools against each server, printing a report."""
+def preflight_mcp(servers: List[Dict[str, Any]]) -> bool:
+    """Run mcp_list_tools against each server (with its own auth), printing a report."""
     rule("MCP server connectivity preflight")
     all_ok = True
     for s in servers:
         name, url = s["name"], s["url"]
-        good, tools, error = mcp_list_tools(url, auth_header)
+        good, tools, error = mcp_list_tools(url, build_auth_header(s.get("auth")))
         if good:
             ok(f"{name:9s} {url}")
             print(c(f"    tools ({len(tools)}): " + ", ".join(tools), C.DIM))

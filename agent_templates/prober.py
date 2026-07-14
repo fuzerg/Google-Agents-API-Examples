@@ -20,12 +20,12 @@ remote MCP servers with their auth headers — and runs the template's declared
 `examples` as stateful, streaming, single-turn interactions (Data Plane).
 
 It works for every template in this repo:
-  * skills-based templates (financial_analyst, github_code_optimizer): local
-    `skills/` are uploaded to GCS and mounted; `x-env-secrets`, `x-output-mount`,
-    and `x-extract-messages` extensions are honored.
-  * MCP templates (atlassian_chat_agent): `mcp_servers` + `auth` from agent.yaml
-    are turned into `mcp_server` tools (with an Authorization header) and baked
-    into the agent, so it is self-contained.
+  * skills-based templates: local `skills/` are uploaded to GCS and mounted, and
+    the `x-env-secrets`, `x-output-mount`, and `x-extract-messages` extensions
+    are honored.
+  * MCP templates: each `mcp_servers` entry (with its own per-server `auth`)
+    becomes an `mcp_server` tool with an Authorization header, baked into the
+    agent so it is self-contained.
 
 Because the agent is self-contained, you can also keep it (`--keep-agent`) and
 then chat with it interactively via `chat.py --agent <id>`.
@@ -92,12 +92,15 @@ def load_template(template_dir):
 
 
 def assemble_tools(config):
-    """Agent tools = explicit `tools` + MCP tools derived from `mcp_servers`/`auth`."""
+    """Agent tools = explicit `tools` + MCP tools derived from `mcp_servers`.
+
+    Each MCP server carries its own per-server `auth` block, so `build_mcp_tools`
+    builds a distinct Authorization header per server.
+    """
     tools = list(config.get("tools", []) or [])
     servers = ak.resolve_servers(config)
     if servers:
-        auth_header = ak.build_auth_header(config.get("auth"))
-        tools.extend(ak.build_mcp_tools(servers, auth_header))
+        tools.extend(ak.build_mcp_tools(servers))
     return tools, servers
 
 
@@ -218,8 +221,7 @@ def main() -> int:
         if not servers:
             ak.err("This template declares no `mcp_servers`; nothing to preflight.")
             return 1
-        auth_header = ak.build_auth_header(config.get("auth"))
-        good = ak.preflight_mcp(servers, auth_header)
+        good = ak.preflight_mcp(servers)
         return 0 if good else 2
 
     # Auth + project + client.
@@ -276,8 +278,7 @@ def main() -> int:
         if args.keep_agent:
             ak.rule("Agent kept")
             ak.ok(f"Agent id: {agent_id}")
-            print(f"Chat with it:  python3 {os.path.relpath(os.path.join(os.path.dirname(__file__), 'atlassian_chat_agent', 'chat.py'))} "
-                  f"--agent {agent_id} --project {project_id}")
+            print(f"Chat with it:  chat.py --agent {agent_id} --project {project_id}")
         else:
             print(f"\nCleaning up: deleting agent '{agent_id}'...")
             ak.delete_agent(project_id, ak.access_token(credentials), agent_id)

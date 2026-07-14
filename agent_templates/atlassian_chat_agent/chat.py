@@ -87,11 +87,9 @@ def provision_from_template(args, project_id, token):
     servers = ak.resolve_servers(config, url_override=args.mcp_url)
     if not servers:
         raise RuntimeError("Template declares no `mcp_servers` to attach.")
-    auth_header = ak.build_auth_header(
-        config.get("auth"), mode=args.auth_mode, email=args.email,
-        api_token=args.api_token, api_key=args.api_key,
-    )
-    tools = ak.build_mcp_tools(servers, auth_header)
+    # Each server carries its own per-server `auth` block (resolved from env vars
+    # it names); build_mcp_tools makes a distinct Authorization header per server.
+    tools = ak.build_mcp_tools(servers)
 
     agent_id = args.agent_id or f"{config.get('id', 'chat-agent')}-{uuid.uuid4().hex[:8]}"
     base_agent = args.base_agent or config.get("base_agent", ak.DEFAULT_BASE_AGENT)
@@ -122,14 +120,11 @@ def main() -> int:
     p.add_argument("--no-stream", action="store_true", help="Disable response streaming.")
     p.add_argument("--keep-agent", action="store_true",
                    help="With --from-template: keep the agent after exit.")
-    # --from-template auth passthrough (else read from agent.yaml `auth` + env).
+    # --from-template options. MCP auth is declared per server in agent.yaml
+    # (`mcp_servers[].auth`) and resolved from the env vars it names.
     p.add_argument("--agent-id", help="Fixed agent id for --from-template.")
     p.add_argument("--base-agent", help="Override base_agent for --from-template.")
-    p.add_argument("--mcp-url", help="Override the MCP server URL for --from-template.")
-    p.add_argument("--auth-mode", choices=["basic", "bearer"], help="MCP auth mode.")
-    p.add_argument("--email", help="Atlassian account email (Basic auth).")
-    p.add_argument("--api-token", help="Atlassian personal API token (Basic auth).")
-    p.add_argument("--api-key", help="Atlassian service-account API key (Bearer auth).")
+    p.add_argument("--mcp-url", help="Override a single MCP server URL for --from-template.")
     args = p.parse_args()
 
     stream = not args.no_stream

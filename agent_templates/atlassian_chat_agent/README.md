@@ -140,7 +140,8 @@ cp .env.example .env
 $EDITOR .env            # set ATLASSIAN_EMAIL + ATLASSIAN_API_TOKEN
 set -a && source .env && set +a
 ```
-(Or pass `--email` / `--api-token` on the command line.)
+The MCP server's `auth` block in `agent.yaml` names which env vars to read
+(e.g. `email_env: ATLASSIAN_EMAIL`, `api_token_env: ATLASSIAN_API_TOKEN`).
 
 ### 5. Install dependencies
 ```bash
@@ -200,8 +201,11 @@ you > Create a Confluence page in the TEAM space summarizing this conversation.
 | chat | `--agent <id\|resource>` | Chat with an existing (self-contained) agent. |
 | chat | `--from-template DIR` | Register a self-contained agent from a template, chat, then delete on exit. |
 | chat | `--keep-agent` | With `--from-template`: keep the agent after exit. |
-| chat | `--auth-mode` / `--email` / `--api-token` / `--api-key` | Override MCP auth for `--from-template` (else from `agent.yaml` + env). |
+| chat | `--mcp-url URL` | Override a single MCP server URL for `--from-template`. |
 | chat | `--no-stream` | Disable token streaming. |
+
+> MCP auth is declared **per server** in `agent.yaml` (`mcp_servers[].auth`) and
+> resolved from the env vars it names — there are no credential flags.
 
 ---
 
