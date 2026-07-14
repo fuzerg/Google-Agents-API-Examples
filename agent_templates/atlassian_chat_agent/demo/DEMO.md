@@ -71,61 +71,57 @@ From the template directory (`agent_templates/atlassian_chat_agent`):
 
 ---
 
+> The agent's behavior — search internal docs + existing bugs, answer known
+> issues, and file a ticket for new ones (after confirming) — is defined in
+> [`../AGENTS.md`](../AGENTS.md). So the prompts below are just **natural user
+> messages**; you don't tell the agent how to do its job.
+
 ## Use case 1 — report → research → file a ticket (multi-turn)
 
-Run an interactive session (provisioned from this template) and send these turns:
+Run an interactive session (provisioned from this template) and just describe the
+problem:
 
 ```bash
-set -a && source .env && set +a
 ../../venv/bin/python3 chat.py --from-template . --project YOUR_GCP_PROJECT
 ```
 
 **Turn 1 (User A reports):**
 > Our checkout-service pod keeps crashing and restarting in staging — kubectl
-> shows CrashLoopBackOff. Search our internal Confluence runbooks AND existing
-> Jira bug tickets for anything relevant, then summarize what you found and
-> whether there is a documented resolution.
+> shows CrashLoopBackOff. Can you help?
 
-*Expected:* the agent calls `getAccessibleAtlassianResources` (cloudId), searches
-Jira (`searchJiraIssuesUsingJql`) and Confluence (`searchConfluenceUsingCql`),
-reports **no matching ticket**, surfaces the three runbooks, and extracts the
-concrete debugging steps (`kubectl logs --previous`, `kubectl describe pod`,
-exit codes / termination message) — noting there is no service-specific
-resolution.
+*Expected:* the agent resolves the `cloudId`, searches Jira and Confluence, finds
+**no matching ticket** but surfaces the three runbooks with the concrete
+debugging steps (`kubectl logs --previous`, `kubectl describe pod`, exit codes /
+termination message), and — since it's a new, untracked issue — **offers to file
+a bug**.
 
-**Turn 2 (User A asks to file):**
-> There is no existing ticket. You are pre-authorized to create exactly ONE Bug
-> in the SCRUM project now — do not ask me to confirm. In the description include
-> the symptom, the concrete debugging steps from the runbooks (with the kubectl
-> commands), and links to the Confluence pages you used. Reply with the new
-> issue key.
+**Turn 2 (User A confirms):**
+> Yes, please go ahead and file it.
 
 *Expected:* the agent calls `createJiraIssue` and returns the new key (e.g.
-`SCRUM-3`). The description contains the symptom, the runbook-derived kubectl
-steps, and links to the Confluence pages.
-
-> **Why "pre-authorized"?** `AGENTS.md` tells the agent to **confirm before
-> mutating**. In a live chat it will ask "shall I create it?" first — good
-> behavior. For a scripted/non-interactive run, the explicit pre-authorization
-> lets it create the ticket in one turn instead of waiting for a confirmation.
+`SCRUM-3`), with a description that captures the symptom, the runbook-derived
+kubectl steps, and links to the Confluence pages it used.
 
 ---
 
 ## Use case 2 — similar report → find the existing ticket (new conversation)
 
-Run it as a **fresh single-turn** interaction via prober (no shared context):
+Start a **fresh** conversation (no shared context) and report the same symptom:
 
 ```bash
-set -a && source .env && set +a
-../../venv/bin/python3 ../../prober.py .. --project YOUR_GCP_PROJECT \
-  "I'm on the payments team. In production our checkout-service pods are going into CrashLoopBackOff after the latest deploy. Is this already being tracked in Jira? If so, give me the ticket key, its status, and a short summary of the context and recommended debugging steps already captured on it."
+../../venv/bin/python3 chat.py --from-template . --project YOUR_GCP_PROJECT
 ```
 
-(Or open a fresh `chat.py --from-template . …` session and ask it as the first turn.)
+**Turn 1 (User B reports):**
+> I'm on the payments team. In production our checkout-service pods are going into
+> CrashLoopBackOff after the latest deploy. Any idea what's going on?
 
 *Expected:* the agent searches Jira, **finds the ticket from use case 1**, and
-returns its key, status, and the captured context (symptom + kubectl debugging
-steps). This demonstrates deduplication of duplicate incident reports.
+tells the user it's already tracked — returning its key, status, and the captured
+context (symptom + kubectl debugging steps) instead of filing a duplicate.
+
+(You can also run this as a one-off via
+`../../venv/bin/python3 ../../prober.py .. --project YOUR_GCP_PROJECT "<the message above>"`.)
 
 ---
 
