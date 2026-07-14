@@ -1,8 +1,20 @@
-# Automated GitHub Code Optimizer (Interactions API Cloud Sandbox Route)
+# Automated GitHub Code Optimizer (Remote MCP Route)
 
-This developer showcase example demonstrates how to build an agent that retrieves slow code from a GitHub repository, benchmarks it in a secure Cloud Sandbox, designs and benchmarks an optimized version, and opens a Pull Request with a comprehensive description of the performance improvements.
+This developer showcase demonstrates how to build an agent that retrieves slow
+code from a GitHub repository, benchmarks it in a secure Cloud Sandbox, designs
+and benchmarks an optimized version, and opens a Pull Request with a
+comprehensive description of the performance improvements.
 
-It combines the **code execution benchmarking** technique with the **GitHub API wrapper skill** to perform end-to-end performance optimization directly in the cloud.
+It combines the **code-execution benchmarking** technique with **GitHub's
+official remote MCP server** for all repository operations. There is **nothing to
+host** and **no custom helper code**: the platform securely routes the model's
+GitHub tool calls (read file, create branch, commit, open PR) to
+`https://api.githubcopilot.com/mcp/`, authenticated with your Personal Access
+Token.
+
+> This is the MCP counterpart to the classic "GCS-mounted skill" pattern. The
+> repository operations that used to live in a bundled `github_helper.py` are now
+> first-class MCP tool calls; the sandbox is used only for benchmarking.
 
 ---
 
@@ -13,89 +25,109 @@ It combines the **code execution benchmarking** technique with the **GitHub API 
  │     Local Client     │
  │ (Unified prober.py)  │
  └──────────┬───────────┘
-            │
-            │ (1) Creates custom agent with GCS-mounted skill
-            │ (2) Starts stateful, streaming interaction passing credentials
+            │ (1) Registers a self-contained agent: code_execution tool +
+            │     github remote MCP server (with Bearer PAT header baked in)
+            │ (2) Starts a stateful, streaming interaction
             ▼
  ┌────────────────────────────────────────────────────────┐
  │                   Gemini Agent Platform                 │
  │                                                        │
  │  ┌──────────────────────────────────────────────────┐  │
  │  │              Agent Container (Cloud)             │  │
- │  │                                                  │  │
- ┌────────────────────────────────────────────────────────┐
- │                   Gemini Agent Platform                 │
- │                                                        │
- │  ┌──────────────────────────────────────────────────┐  │
- │  │              Agent Container (Cloud)             │  │
- │  │                                                  │  │
- │  │ (3) Reads SKILL.md from /.agents/skills...       │  │
- │  │ (4) Retrieves fibonacci.py using GitHub REST API │  │
- │  │ (5) Runs benchmark on fibonacci.py in sandbox    │  │
- │  │ (6) Writes optimized code & runs speedup benchmark│  │
+ │  │ (3) Calls the github MCP tool to read the file   │  │
+ │  │ (4) Benchmarks original code in the sandbox      │  │
+ │  │ (5) Writes optimized code & benchmarks speedup   │  │
  │  │                                                  │  │
  │  │   ┌──────────────────────────────────────────┐   │  │
  │  │   │          Code Execution Sandbox          │   │  │
- │  │   │                                          │   │  │
- │  │   │ (7) Imports sys.path('/.agents/skills..')│   │  │
- │  │   │ (8) Calls github_helper.py functions     │   │  │
- │  │   └────────────────────┬─────────────────────┘   │  │
- │  └────────────────────────┼─────────────────────────┘  │
+ │  │   │  timeit baseline vs. optimized, verify   │   │  │
+ │  │   └──────────────────────────────────────────┘   │  │
+ │  └───────────────────────┬──────────────────────────┘  │
+ │           (6) Tool calls: create_branch, create/update  │
+ │               file, create_pull_request                 │
  └───────────────────────────┼────────────────────────────┘
-                             │
-                             │ (9) Commits optimized code & opens PR
+                             │  platform routes tool calls with the
+                             │  Authorization: Bearer <PAT> header
                              ▼
-                    ┌─────────────────┐
-                    │   GitHub API    │
-                    │   (GitHub PR)   │
-                    └─────────────────┘
+                  ┌────────────────────────────┐
+                  │  GitHub Remote MCP Server  │
+                  │ api.githubcopilot.com/mcp/ │
+                  └─────────────┬──────────────┘
+                                ▼
+                        ┌─────────────────┐
+                        │   GitHub (PR)   │
+                        └─────────────────┘
 ```
 
-1.  **Provisioning & GCS Upload**: The prober script uploads the custom Python wrapper library (`github_helper.py`) and instructions (`SKILL.md`) to your GCS bucket. It also securely pipes your `GITHUB_TOKEN` into the bucket.
-2.  **Custom Agent Deployment**: The Control Plane registers a stateful agent configuration in the cloud, specifying the GCS bucket source to mount to `/.agents/skills/github_automation`, and enables the `code_execution` sandbox tool.
-3.  **Autonomous Sandbox Execution**: The agent receives the prompt.
-4.  **Retrieval and Benchmarking**: The agent fetches the recursive `fibonacci` function from `fibonacci.py` via the GitHub REST API, runs a benchmark using `timeit` in the sandbox, designs an optimized O(N) implementation, and benchmarks the two versions comparatively.
-4.  **GitHub PR Creation**: The agent creates a git branch, commits the optimized file, and opens a Pull Request back to `main` with a comprehensive description of the benchmark results and speedup explanations.
-5.  **PR URL Extraction**: The generated Pull Request link is parsed and outputted by the prober script.
+1.  **Provisioning**: `prober.py` parses `agent.yaml` and registers a
+    *self-contained* agent whose tools are the `code_execution` sandbox plus the
+    `github` remote MCP server. The `GITHUB_TOKEN` from this template's `.env` is
+    interpolated into the MCP server's `Authorization: Bearer …` header and baked
+    into the agent — no credential is stored in the YAML.
+2.  **Retrieval**: The agent calls the GitHub MCP "get file contents" tool to
+    fetch the target file from `main`.
+3.  **Benchmarking**: The agent benchmarks the original in the sandbox, designs
+    an optimized implementation, and benchmarks the two comparatively to prove
+    the speedup and confirm identical results.
+4.  **PR creation**: The agent calls the GitHub MCP tools to create a unique
+    branch, commit the optimized file, and open a **new** Pull Request back to
+    `main` with the benchmark results and an explanation of the speedup.
+5.  **PR URL extraction**: The agent wraps the resulting PR URL in
+    `__PR_URL_START__`/`__PR_URL_END__` markers; `prober.py` parses and prints
+    it (`x-extract-messages`).
 
 ---
 
 ## Setup & Requirements
 
 ### 1. Prerequisites
-Ensure you have completed the global showcase prerequisites:
+Complete the global showcase prerequisites (see the parent
+[`agent_templates/README.md`](../README.md)):
 *   Python 3.10+ and requirements installed in your virtual environment.
 *   GCP Application Default Credentials (ADC) logged in.
 *   The Vertex AI API enabled.
 
 ### 2. Obtain a GitHub Personal Access Token (PAT)
-The agent needs a GitHub Personal Access Token (PAT) to perform repository actions.
-1.  Go to **GitHub Settings** -> **Developer Settings** -> **Personal Access Tokens** -> **Fine-grained tokens** (or Tokens Classic).
-2.  Generate a new token with **Repository permissions**:
-    *   **Contents**: `Read and write` (to read/write files and create branches).
-    *   **Pull Requests**: `Read and write` (to open the PR).
+The remote GitHub MCP server accepts any valid GitHub access token; this template
+passes a PAT as a Bearer token.
+1.  Go to **GitHub Settings** → **Developer Settings** → **Personal Access
+    Tokens** → **Fine-grained tokens** (or Tokens Classic).
+2.  Grant **Repository permissions**:
+    *   **Contents**: `Read and write` (read/write files, create branches).
+    *   **Pull Requests**: `Read and write` (open the PR).
 3.  Copy the token value.
 
-### 3. Set the Environment Variables
-Set your GitHub token in your terminal so the agent can authenticate when opening the pull request on `fuzerg/Slow-Code-Example`:
+### 3. Provide the token
+Set the token in your shell **or** in this template's `.env` file (git-ignored);
+`prober.py` loads the template `.env` automatically:
 ```bash
 export GITHUB_TOKEN="github_pat_your_token_value_here"
 ```
+> Never commit a real token. The `.env` file in this directory is ignored by git.
+
+### 4. (Optional) Scope the tool surface
+`agent.yaml` sets `X-MCP-Toolsets: "repos,pull_requests"` so the agent only sees
+the repository and pull-request tools it needs. Edit or remove that header to
+expose more (or the full default) toolset, or add `X-MCP-Readonly: "true"` to
+forbid writes. See the
+[remote server docs](https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md).
 
 ---
 
 ## Running the Example
 
-1.  Navigate to the agent_templates directory:
+1.  (Optional) **Preflight the MCP connection** — verify the token/URL and list
+    the tools the server exposes before provisioning an agent:
     ```bash
-    cd agent_templates
+    ./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer --check
+    ./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer --list-tools
     ```
-2.  Run the prober:
+2.  **Run the examples:**
     ```bash
     ./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer
     ```
-
-3.  The agent will start streaming its progress. Once finished, you will see a success message with the URL of the created Pull Request:
+3.  The agent streams its progress. When finished you will see the created Pull
+    Request URL:
     ```
     ✨ Automated Pull Request created successfully: https://github.com/your_github_username/your_repository_name/pull/99
     ```

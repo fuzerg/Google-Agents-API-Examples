@@ -28,12 +28,11 @@ agent_templates/
 │   ├── README.md
 │   └── skills/                 # Custom GCS-mounted helper module
 │
-├── github_code_optimizer/      # Showcase 2: GitHub Code Optimizer
-│   ├── agent.yaml
+├── github_code_optimizer/      # Showcase 2: GitHub Code Optimizer (Remote MCP)
+│   ├── agent.yaml              # code_execution + GitHub remote MCP server
 │   ├── AGENTS.md
 │   ├── README.md
-│   ├── slow_code.py            # Target Python code to optimize
-│   └── skills/                 # GitHub REST API helper class
+│   └── .env                    # GITHUB_TOKEN (git-ignored; PAT for the MCP header)
 │
 ├── mcp_support/                # Showcase 3: IT Support Bot (MCP)
 │   ├── agent.yaml
@@ -178,8 +177,9 @@ Refer to the individual README files in each folder for specific prerequisites (
 1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/financial_analyst/README.md)
     *   *Requires GCS skill mounting.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/financial_analyst`
-2.  **GitHub Code Optimizer**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/github_code_optimizer/README.md)
-    *   *Requires `GITHUB_TOKEN` environment variable.*
+2.  **GitHub Code Optimizer (Remote MCP)**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/github_code_optimizer/README.md)
+    *   *Benchmarks in the sandbox and performs all GitHub operations via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT); nothing to host.*
+    *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer --list-tools`
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer`
 3.  **IT Support Bot (MCP)**: [mcp_support/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/mcp_support/README.md)
     *   *Requires starting the local MCP server and exposing a tunnel.*

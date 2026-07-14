@@ -1,18 +1,48 @@
 # Target repository: https://github.com/fuzerg/Slow-Code-Example
 id: github-code-optimizer-showcase
 base_agent: antigravity-preview-05-2026
-description: "A showcase agent that retrieves code from GitHub, benchmarks and optimizes it in the Cloud Sandbox, and opens a PR with performance results."
+description: "A showcase agent that retrieves code from GitHub, benchmarks and optimizes it in the Cloud Sandbox, and opens a PR with performance results — using GitHub's official remote MCP server for every repository operation (no self-hosted helper)."
+
+# The agent still needs the sandbox to benchmark the original vs. optimized code.
+# All GitHub operations (read file, create branch, commit, open PR) are handled
+# by the remote MCP server declared below, not by a mounted skill.
 tools:
   - type: code_execution
+
+# ---------------------------------------------------------------------------
+# GitHub's official, fully-managed remote MCP server.
+#
+# The Gemini Enterprise Agent Platform securely routes the model's tool calls to
+# this URL, forwarding the headers built from `auth` below (baked into the
+# self-contained agent). Nothing to host — this replaces the old GCS-mounted
+# `github_automation` skill + `github_helper.py`.
+#
+# Auth: the remote server accepts any valid GitHub access token in the
+# Authorization header; here we pass a Personal Access Token (PAT) as a Bearer
+# token. The value is interpolated at runtime from the GITHUB_TOKEN env var
+# (loaded from this template's .env), so no credential is stored in this file.
+#   Reference: https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
+#
+# `X-MCP-Toolsets` scopes the exposed tools down to just what this workflow needs
+# (repository file ops + pull requests) instead of the full default surface.
+# Remove the header to expose the default toolset, or set it to e.g.
+# "repos,pull_requests,issues". Add `X-MCP-Readonly: "true"` to forbid writes.
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: github
+    url: https://api.githubcopilot.com/mcp/
+    enabled: true
+    auth:
+      headers:
+        Authorization: "Bearer ${GITHUB_TOKEN}"
+        X-MCP-Toolsets: "repos,pull_requests"
+
 environment:
   type: "remote"
-  sources:
-    - type: "gcs"
-      source: "gs://${GCS_BUCKET}/github_automation"
-      target: "/.agents/skills/github_automation"
   network:
     allowlist:
       - domain: "*"
+
 examples:
   - title: "Optimize fibonacci.py"
     prompt: |
@@ -36,10 +66,6 @@ examples:
       Repository details:
       - Repository Owner: fuzerg
       - Repository Name: Slow-Code-Example
-
-x-env-secrets:
-  github_automation:
-    - GITHUB_TOKEN
 
 x-extract-messages:
   - start: "__PR_URL_START__"
