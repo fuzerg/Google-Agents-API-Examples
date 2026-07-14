@@ -54,19 +54,30 @@ The runners live one level up and are **template-agnostic** (both share
 The Rovo MCP server supports **non-interactive API-token auth** — the client
 sends credentials directly in the `Authorization` header (no browser consent).
 The per-server `auth` block in `agent.yaml` (parsed by `agentkit`, a **repo
-convention** — not a platform standard) supports three forms:
+convention** — not a platform standard) is a **raw `headers` map** whose values
+reference env vars via `${VAR}`:
 
-| Form | `auth` block | Header sent |
-| --- | --- | --- |
-| `basic` (default) | `mode: basic` + `email_env` + `api_token_env` | `Authorization: Basic base64(email:token)` |
-| `bearer` | `mode: bearer` + `api_key_env` | `Authorization: Bearer <api_key>` |
-| raw headers | `headers:` map with `${ENV}` interpolation | any header(s), e.g. `X-API-Key: ${...}` |
+```yaml
+mcp_servers:
+  - name: atlassian
+    url: https://mcp.atlassian.com/v1/mcp
+    auth:
+      headers:
+        Authorization: "${ATLASSIAN_AUTH_HEADER}"
+```
 
-`basic`/`bearer` are sugar for the common cases; the raw `headers:` form covers
-any MCP server that needs a different header name or multiple headers. All three
-just populate the standardized `mcp_server` tool `headers` map that the platform
-forwards to the MCP URL. The header(s) are baked into the agent at registration;
-the platform keeps them **confidential to the MCP URL** and never returns them.
+Set `ATLASSIAN_AUTH_HEADER` to the full header value:
+- **Personal API token** (must be a scoped token) → `Basic base64(email:token)`:
+  ```bash
+  ATLASSIAN_AUTH_HEADER="Basic $(printf '%s' "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" | base64)"
+  ```
+- **Service-account API key** → `Bearer <key>` (Rovo rejects personal tokens as Bearer).
+
+This raw-headers form works for any MCP server (any header name(s), multiple
+headers). It just populates the standardized `mcp_server` tool `headers` map that
+the platform forwards to the MCP URL. The header(s) are baked into the agent at
+registration; the platform keeps them **confidential to the MCP URL** and never
+returns them.
 
 > **cloudId matters.** With API-token auth the token is **not** bound to a single
 > Atlassian site, and every Jira/Confluence tool needs a `cloudId`. The Rovo MCP
@@ -141,12 +152,14 @@ Copy the example env file and fill it in:
 ```bash
 cd agent_templates/atlassian_chat_agent
 cp .env.example .env
-$EDITOR .env            # set ATLASSIAN_EMAIL + ATLASSIAN_API_TOKEN
+$EDITOR .env    # set ATLASSIAN_AUTH_HEADER (agent) + EMAIL/TOKEN/SITE (demo seeder)
 ```
-Both `prober.py` and `chat.py` **auto-load this template's `.env`**, so you don't
-need to source it manually (shell-exported vars still take precedence). The MCP
-server's `auth` block in `agent.yaml` names which env vars to read
-(e.g. `email_env: ATLASSIAN_EMAIL`, `api_token_env: ATLASSIAN_API_TOKEN`).
+The agent reads **`ATLASSIAN_AUTH_HEADER`** (the full `Authorization` value —
+see [How authentication works](#how-authentication-works)); the demo seeder
+(`demo/seed_demo.py`) reads `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` +
+`ATLASSIAN_SITE`. Both `prober.py` and `chat.py` **auto-load this template's
+`.env`**, so you don't need to source it manually (shell-exported vars still take
+precedence).
 
 ### 5. Install dependencies
 ```bash

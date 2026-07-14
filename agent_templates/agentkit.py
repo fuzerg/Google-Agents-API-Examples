@@ -37,7 +37,6 @@ Use current models only (`gemini-2.5-pro`, `gemini-3-flash-preview`, ...);
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -94,14 +93,6 @@ def rule(title: str = "") -> None:
         print(f"\n{c(line, C.DIM)}\n{c(title, C.BOLD)}\n{c(line, C.DIM)}")
     else:
         print(c(line, C.DIM))
-
-
-def mask(secret: str, keep: int = 4) -> str:
-    if not secret:
-        return "<empty>"
-    if len(secret) <= keep:
-        return "*" * len(secret)
-    return secret[:keep] + "*" * (len(secret) - keep)
 
 
 # ---------------------------------------------------------------------------
@@ -228,79 +219,33 @@ def _interpolate_env(value: str) -> str:
 def build_auth_headers(auth_cfg: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
     """Build the HTTP headers for a single MCP server from its `auth` block.
 
-    Auth is declared per MCP server in agent.yaml and only ever references env
-    vars (no credential values are hardcoded). Three forms, which may be combined:
+    Auth is declared per MCP server in agent.yaml as a raw `headers` map whose
+    values reference env vars via `${VAR}` / `$VAR` (no credential values are
+    hardcoded). This maps directly onto the `mcp_server` tool's `headers` field:
 
-      # (1) Basic — Authorization: Basic base64(email:token)
-      auth:
-        mode: basic
-        email_env: MY_EMAIL
-        api_token_env: MY_TOKEN
+      mcp_servers:
+        - name: my-server
+          url: https://...
+          auth:
+            headers:
+              Authorization: "${MY_AUTH_HEADER}"   # e.g. "Basic <b64>" or "Bearer <k>"
+              X-API-Key: "${MY_API_KEY}"
 
-      # (2) Bearer — Authorization: Bearer <key>
-      auth:
-        mode: bearer
-        api_key_env: MY_API_KEY
-
-      # (3) Raw headers — any header name(s), with ${ENV} / $ENV interpolation
-      auth:
-        headers:
-          X-API-Key: "${MY_API_KEY}"
-          Authorization: "Bearer ${MY_TOKEN}"
-
-    If both `mode` and `headers` are present, the `mode` header is built first and
-    the `headers` map is merged on top (so it can add or override headers).
-    Returns None when the server has no `auth` block (or it yields no headers).
+    Returns None when the server has no `auth` block (or it declares no headers).
+    A referenced env var that is unset raises a clear error.
     """
     if not auth_cfg:
         return None
-    headers: Dict[str, str] = {}
-
-    mode = auth_cfg.get("mode")
-    if mode:
-        mode = str(mode).lower()
-        if mode == "basic":
-            email_env = auth_cfg.get("email_env")
-            token_env = auth_cfg.get("api_token_env")
-            if not email_env or not token_env:
-                raise RuntimeError(
-                    "Basic auth requires 'email_env' and 'api_token_env' in the "
-                    "MCP server's `auth` block."
-                )
-            email = os.environ.get(email_env)
-            api_token = os.environ.get(token_env)
-            if not email or not api_token:
-                raise RuntimeError(
-                    f"Basic auth: set env vars {email_env} and {token_env}."
-                )
-            raw = f"{email}:{api_token}".encode("utf-8")
-            info(f"Auth: Basic as {email} (token {mask(api_token)})")
-            headers["Authorization"] = "Basic " + base64.b64encode(raw).decode("ascii")
-        elif mode == "bearer":
-            key_env = auth_cfg.get("api_key_env")
-            if not key_env:
-                raise RuntimeError(
-                    "Bearer auth requires 'api_key_env' in the MCP server's "
-                    "`auth` block."
-                )
-            api_key = os.environ.get(key_env)
-            if not api_key:
-                raise RuntimeError(f"Bearer auth: set env var {key_env}.")
-            info(f"Auth: Bearer (key {mask(api_key)})")
-            headers["Authorization"] = "Bearer " + api_key
-        else:
-            raise RuntimeError(
-                f"Unknown auth mode '{mode}' (expected 'basic' or 'bearer')."
-            )
-
     raw_headers = auth_cfg.get("headers")
-    if raw_headers is not None:
-        if not isinstance(raw_headers, dict):
-            raise RuntimeError("`auth.headers` must be a mapping of name -> value.")
-        for name, value in raw_headers.items():
-            headers[str(name)] = _interpolate_env(str(value))
-        info(f"Auth: custom header(s) {', '.join(sorted(str(k) for k in raw_headers))}")
-
+    if raw_headers is None:
+        return None
+    if not isinstance(raw_headers, dict):
+        raise RuntimeError("`auth.headers` must be a mapping of header name -> value.")
+    headers: Dict[str, str] = {}
+    for name, value in raw_headers.items():
+        headers[str(name)] = _interpolate_env(str(value))
+    if headers:
+        info(f"Auth: header(s) {', '.join(sorted(headers))}")
     return headers or None
 
 

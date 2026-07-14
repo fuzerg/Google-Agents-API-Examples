@@ -14,29 +14,26 @@ description: >-
 # Atlassian's official hosted remote MCP server ("Rovo MCP Server").
 #
 # This endpoint is operated by Atlassian. The Gemini Enterprise Agent Platform
-# securely routes the model's tool calls to this URL, forwarding ONLY the auth
-# header supplied at interaction time (see `auth` below). Nothing to host.
+# securely routes the model's tool calls to this URL, forwarding the headers
+# built from `auth` below (baked into the self-contained agent). Nothing to host.
 #
 # `/v1/sse` is deprecated after 2026-06-30; use the streamable-HTTP `/v1/mcp`.
 # Reference:
 #   https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/
 #
-# Authentication forwarded to the Rovo MCP server as an `Authorization` header.
+# Auth is a raw `headers` map whose values reference env vars (${VAR}); the
+# runners never see raw credentials in this file. The Rovo MCP server supports
+# non-interactive API-token auth (no browser); your Atlassian org admin must
+# first ENABLE "authentication via API token", and the token must carry the
+# required product scopes.
 #
-# The Rovo MCP server supports non-interactive API-token auth (no browser). Your
-# Atlassian org admin must first ENABLE "authentication via API token" for the
-# Rovo MCP server, and the token must carry the required product scopes.
+#   Personal API token  -> Authorization: Basic <base64(email:api_token)>
+#   Service-account key  -> Authorization: Bearer <api_key>
 #
-#   mode: basic   -> Personal API token, sent as:
-#                      Authorization: Basic <base64(email:api_token)>
-#                    Reads `email_env` + `api_token_env` (chat.py base64-encodes).
-#
-#   mode: bearer  -> Service-account API key, sent as:
-#                      Authorization: Bearer <api_key>
-#                    Reads `api_key_env`.
-#
-# Credentials are read from the host environment and passed PER TURN, so no
-# secret is ever stored on the registered agent. Never commit real tokens.
+# Set ATLASSIAN_AUTH_HEADER to the FULL header value, e.g.:
+#   ATLASSIAN_AUTH_HEADER="Basic $(printf '%s' "$EMAIL:$API_TOKEN" | base64)"
+#   ATLASSIAN_AUTH_HEADER="Bearer <service-account-api-key>"
+# (Rovo rejects personal tokens sent as Bearer.) Never commit real tokens.
 # Reference:
 #   https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/
 # ---------------------------------------------------------------------------
@@ -45,11 +42,8 @@ mcp_servers:
     url: https://mcp.atlassian.com/v1/mcp
     enabled: true
     auth:
-      # Personal API token -> Basic (email:token). Rovo rejects personal tokens
-      # sent as Bearer; use mode: bearer only for a service-account API key.
-      mode: basic
-      email_env: ATLASSIAN_EMAIL
-      api_token_env: ATLASSIAN_API_TOKEN
+      headers:
+        Authorization: "${ATLASSIAN_AUTH_HEADER}"
 
 # Sequential prompts run by chat.py. Each example is an independent, stateful
 # conversation (interactive multi-turn is available via `chat.py --interactive`).
