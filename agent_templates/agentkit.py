@@ -40,6 +40,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -210,59 +211,97 @@ def load_dotenv(path: str, override: bool = False) -> int:
 # ---------------------------------------------------------------------------
 # Generic MCP helpers.
 # ---------------------------------------------------------------------------
-def build_auth_header(auth_cfg: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Build an `Authorization` header for a single MCP server from its `auth`.
+_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 
-    Auth is declared per MCP server in agent.yaml and names the env vars that
-    hold the credentials (no credential values or env-var names are hardcoded):
 
-      mcp_servers:
-        - name: my-server
-          url: https://...
-          auth:
-            mode: basic            # basic | bearer
-            email_env: MY_EMAIL        # basic: env var holding the account email
-            api_token_env: MY_TOKEN    # basic: env var holding the API token
-            # mode: bearer
-            # api_key_env: MY_API_KEY  # bearer: env var holding the API key
+def _interpolate_env(value: str) -> str:
+    """Expand `${VAR}` / `$VAR` references in `value`, erroring on unset vars."""
+    def repl(m: "re.Match[str]") -> str:
+        name = m.group(1) or m.group(2)
+        val = os.environ.get(name)
+        if val is None:
+            raise RuntimeError(f"Header value references unset env var: {name}")
+        return val
+    return _ENV_REF.sub(repl, value)
 
-    Returns None when the server has no `auth` block.
+
+def build_auth_headers(auth_cfg: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """Build the HTTP headers for a single MCP server from its `auth` block.
+
+    Auth is declared per MCP server in agent.yaml and only ever references env
+    vars (no credential values are hardcoded). Three forms, which may be combined:
+
+      # (1) Basic — Authorization: Basic base64(email:token)
+      auth:
+        mode: basic
+        email_env: MY_EMAIL
+        api_token_env: MY_TOKEN
+
+      # (2) Bearer — Authorization: Bearer <key>
+      auth:
+        mode: bearer
+        api_key_env: MY_API_KEY
+
+      # (3) Raw headers — any header name(s), with ${ENV} / $ENV interpolation
+      auth:
+        headers:
+          X-API-Key: "${MY_API_KEY}"
+          Authorization: "Bearer ${MY_TOKEN}"
+
+    If both `mode` and `headers` are present, the `mode` header is built first and
+    the `headers` map is merged on top (so it can add or override headers).
+    Returns None when the server has no `auth` block (or it yields no headers).
     """
     if not auth_cfg:
         return None
-    mode = (auth_cfg.get("mode") or "basic").lower()
+    headers: Dict[str, str] = {}
 
-    if mode == "basic":
-        email_env = auth_cfg.get("email_env")
-        token_env = auth_cfg.get("api_token_env")
-        if not email_env or not token_env:
+    mode = auth_cfg.get("mode")
+    if mode:
+        mode = str(mode).lower()
+        if mode == "basic":
+            email_env = auth_cfg.get("email_env")
+            token_env = auth_cfg.get("api_token_env")
+            if not email_env or not token_env:
+                raise RuntimeError(
+                    "Basic auth requires 'email_env' and 'api_token_env' in the "
+                    "MCP server's `auth` block."
+                )
+            email = os.environ.get(email_env)
+            api_token = os.environ.get(token_env)
+            if not email or not api_token:
+                raise RuntimeError(
+                    f"Basic auth: set env vars {email_env} and {token_env}."
+                )
+            raw = f"{email}:{api_token}".encode("utf-8")
+            info(f"Auth: Basic as {email} (token {mask(api_token)})")
+            headers["Authorization"] = "Basic " + base64.b64encode(raw).decode("ascii")
+        elif mode == "bearer":
+            key_env = auth_cfg.get("api_key_env")
+            if not key_env:
+                raise RuntimeError(
+                    "Bearer auth requires 'api_key_env' in the MCP server's "
+                    "`auth` block."
+                )
+            api_key = os.environ.get(key_env)
+            if not api_key:
+                raise RuntimeError(f"Bearer auth: set env var {key_env}.")
+            info(f"Auth: Bearer (key {mask(api_key)})")
+            headers["Authorization"] = "Bearer " + api_key
+        else:
             raise RuntimeError(
-                "Basic auth requires 'email_env' and 'api_token_env' in the MCP "
-                "server's `auth` block."
+                f"Unknown auth mode '{mode}' (expected 'basic' or 'bearer')."
             )
-        email = os.environ.get(email_env)
-        api_token = os.environ.get(token_env)
-        if not email or not api_token:
-            raise RuntimeError(
-                f"Basic auth: set env vars {email_env} and {token_env}."
-            )
-        raw = f"{email}:{api_token}".encode("utf-8")
-        info(f"Auth: Basic as {email} (token {mask(api_token)})")
-        return "Basic " + base64.b64encode(raw).decode("ascii")
 
-    if mode == "bearer":
-        key_env = auth_cfg.get("api_key_env")
-        if not key_env:
-            raise RuntimeError(
-                "Bearer auth requires 'api_key_env' in the MCP server's `auth` block."
-            )
-        api_key = os.environ.get(key_env)
-        if not api_key:
-            raise RuntimeError(f"Bearer auth: set env var {key_env}.")
-        info(f"Auth: Bearer (key {mask(api_key)})")
-        return "Bearer " + api_key
+    raw_headers = auth_cfg.get("headers")
+    if raw_headers is not None:
+        if not isinstance(raw_headers, dict):
+            raise RuntimeError("`auth.headers` must be a mapping of name -> value.")
+        for name, value in raw_headers.items():
+            headers[str(name)] = _interpolate_env(str(value))
+        info(f"Auth: custom header(s) {', '.join(sorted(str(k) for k in raw_headers))}")
 
-    raise RuntimeError(f"Unknown auth mode '{mode}' (expected 'basic' or 'bearer').")
+    return headers or None
 
 
 def resolve_servers(
@@ -290,12 +329,13 @@ def resolve_servers(
 
 
 def build_mcp_tools(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Turn a server list into `mcp_server` tool specs, one header per server.
+    """Turn a server list into `mcp_server` tool specs, one header set per server.
 
-    Each server carries its own `auth` block, so a distinct Authorization header
-    is built per server. The same `mcp_server` tool shape is accepted both baked
-    into the agent (Control Plane) and per interaction (Data Plane); the Control
-    Plane rejects the older `mcp` type, so use `mcp_server`.
+    Each server carries its own `auth` block, so a distinct set of headers is
+    built per server (see build_auth_headers). The same `mcp_server` tool shape
+    is accepted both baked into the agent (Control Plane) and per interaction
+    (Data Plane); the Control Plane rejects the older `mcp` type, so use
+    `mcp_server`.
     """
     tools = []
     for s in servers:
@@ -304,9 +344,9 @@ def build_mcp_tools(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "name": s["name"],
             "url": s["url"],
         }
-        header = build_auth_header(s.get("auth"))
-        if header:
-            tool["headers"] = {"Authorization": header}
+        headers = build_auth_headers(s.get("auth"))
+        if headers:
+            tool["headers"] = headers
         tools.append(tool)
     return tools
 
@@ -337,30 +377,31 @@ def _parse_mcp_body(resp: requests.Response) -> Optional[dict]:
         return None
 
 
-def _mcp_post(session, url, auth_header, payload, session_id, timeout):
+def _mcp_post(session, url, auth_headers, payload, session_id, timeout):
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
     }
-    if auth_header:
-        headers["Authorization"] = auth_header
+    if auth_headers:
+        headers.update(auth_headers)
     if session_id:
         headers["Mcp-Session-Id"] = session_id
     return session.post(url, headers=headers, json=payload, timeout=timeout)
 
 
 def mcp_list_tools(
-    url: str, auth_header: Optional[str], timeout: int = 30
+    url: str, auth_headers: Optional[Dict[str, str]], timeout: int = 30
 ) -> Tuple[bool, List[str], str]:
     """Directly initialize + list tools on a remote MCP server.
 
+    `auth_headers` is a header-name -> value map (see build_auth_headers).
     Returns (ok, tool_names, error_message).
     """
     session = requests.Session()
     try:
         init = _mcp_post(
-            session, url, auth_header,
+            session, url, auth_headers,
             {
                 "jsonrpc": "2.0", "id": 1, "method": "initialize",
                 "params": {
@@ -381,7 +422,7 @@ def mcp_list_tools(
         )
         try:
             _mcp_post(
-                session, url, auth_header,
+                session, url, auth_headers,
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 session_id=session_id, timeout=timeout,
             )
@@ -389,7 +430,7 @@ def mcp_list_tools(
             pass
 
         listing = _mcp_post(
-            session, url, auth_header,
+            session, url, auth_headers,
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
             session_id=session_id, timeout=timeout,
         )
@@ -421,7 +462,7 @@ def preflight_mcp(servers: List[Dict[str, Any]]) -> bool:
     all_ok = True
     for s in servers:
         name, url = s["name"], s["url"]
-        good, tools, error = mcp_list_tools(url, build_auth_header(s.get("auth")))
+        good, tools, error = mcp_list_tools(url, build_auth_headers(s.get("auth")))
         if good:
             ok(f"{name:9s} {url}")
             print(c(f"    tools ({len(tools)}): " + ", ".join(tools), C.DIM))

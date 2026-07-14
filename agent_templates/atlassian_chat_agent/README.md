@@ -53,21 +53,25 @@ The runners live one level up and are **template-agnostic** (both share
 
 The Rovo MCP server supports **non-interactive API-token auth** — the client
 sends credentials directly in the `Authorization` header (no browser consent).
-Both runners support the two documented mechanisms:
+The per-server `auth` block in `agent.yaml` (parsed by `agentkit`, a **repo
+convention** — not a platform standard) supports three forms:
 
-| Mode | Credential | Header sent to Rovo MCP |
+| Form | `auth` block | Header sent |
 | --- | --- | --- |
-| `basic` (default) | Personal API token | `Authorization: Basic base64(email:api_token)` |
-| `bearer` | Service-account API key | `Authorization: Bearer <api_key>` |
+| `basic` (default) | `mode: basic` + `email_env` + `api_token_env` | `Authorization: Basic base64(email:token)` |
+| `bearer` | `mode: bearer` + `api_key_env` | `Authorization: Bearer <api_key>` |
+| raw headers | `headers:` map with `${ENV}` interpolation | any header(s), e.g. `X-API-Key: ${...}` |
 
-The header is baked into the agent at registration; the platform keeps it
-**confidential to the Rovo MCP URL** and never returns it.
+`basic`/`bearer` are sugar for the common cases; the raw `headers:` form covers
+any MCP server that needs a different header name or multiple headers. All three
+just populate the standardized `mcp_server` tool `headers` map that the platform
+forwards to the MCP URL. The header(s) are baked into the agent at registration;
+the platform keeps them **confidential to the MCP URL** and never returns them.
 
 > **cloudId matters.** With API-token auth the token is **not** bound to a single
-> Atlassian site, and every Jira/Confluence tool needs a `cloudId`. The agent's
-> `AGENTS.md` therefore instructs it to call **`getAccessibleAtlassianResources`
-> first** to resolve the `cloudId`, then reuse it for the rest of the
-> conversation.
+> Atlassian site, and every Jira/Confluence tool needs a `cloudId`. The Rovo MCP
+> tool schemas make `getAccessibleAtlassianResources` the entry point, so the
+> model resolves the `cloudId` on its own and reuses it for the conversation.
 
 ---
 
