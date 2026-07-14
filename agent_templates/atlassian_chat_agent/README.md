@@ -120,44 +120,28 @@ gcloud config set project YOUR_PROJECT_ID
 gcloud services enable aiplatform.googleapis.com
 ```
 
-### 3. Create your Atlassian API token
+### 3. Provide your credentials
 
-You need a **scoped** API token (a plain "classic" token won't work with the Rovo
-MCP server). Step by step:
+Get an Atlassian API token from
+**https://id.atlassian.com/manage-profile/security/api-tokens**
+(use **Create API token with scopes** — a classic token won't work with Rovo MCP).
+Copy it and note the owner's email.
 
-1. Sign in to your Atlassian account, then open the API tokens page:
-   **https://id.atlassian.com/manage-profile/security/api-tokens**
-2. Click **Create API token with scopes** (not "Create API token").
-3. Give it a **name** (e.g. `gemini-rovo-mcp`) and an **expiry**, then click **Next**.
-4. Select the **app**: choose the option for Jira/Confluence, then click **Next**.
-5. Select **scopes** — the read (and, if you want the agent to make changes, write)
-   scopes for Jira and Confluence, e.g. `read:jira-work`, `write:jira-work`,
-   `read:confluence-content.all`, `write:confluence-content`. Click **Next**.
-   *(Shortcut: this [deep link](https://id.atlassian.com/manage-profile/security/api-tokens?autofillToken&expiryDays=max&appId=mcp&selectedScopes=all)
-   pre-selects the MCP scopes.)*
-6. Click **Create**, then **Copy** the token — it is shown **only once**.
-7. Note the **email address** of the account that owns the token.
-
-> **Writes** (create/update issues, transitions, create/update pages) also require
-> your org admin to grant the `write_jira` / `write_confluence` permission groups
-> for the Rovo MCP server (step 1). Read/search work with read scopes.
-
-### 4. Provide your credentials
-Copy the example env file and paste in your email + token (and your site URL):
+Then copy the example env file and paste them in:
 ```bash
 cd agent_templates/atlassian_chat_agent
 cp .env.example .env
 $EDITOR .env
 ```
 ```bash
-ATLASSIAN_EMAIL="you@example.com"           # the token owner's email (step 3.7)
-ATLASSIAN_API_TOKEN="your_scoped_api_token"  # the token you copied (step 3.6)
+ATLASSIAN_EMAIL="you@example.com"
+ATLASSIAN_API_TOKEN="your_api_token"
 ATLASSIAN_SITE="https://your-site.atlassian.net"
 ```
 Both `prober.py` and `chat.py` **auto-load this template's `.env`**, so you don't
 need to source it manually (shell-exported vars still take precedence).
 
-### 5. Install dependencies
+### 4. Install dependencies
 ```bash
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
