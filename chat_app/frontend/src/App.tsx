@@ -30,6 +30,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showNewChat, setShowNewChat] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [agentEvents, setAgentEvents] = useState<{ event_type: string; data?: any; detail?: string; timestamp: string }[]>([]);
   const [connected, setConnected] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -129,6 +130,7 @@ export default function App() {
     assistantMsg.status = "streaming";
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
+    setAgentEvents([]);
 
     abortRef.current = streamMessage(activeId, text, {
       onDelta: (delta) => {
@@ -140,8 +142,18 @@ export default function App() {
           )
         );
       },
+      onAgentEvent: (event) => {
+        setAgentEvents((prev) => [
+          ...prev,
+          {
+            ...event,
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      },
       onDone: async () => {
         setStreaming(false);
+        setAgentEvents([]);
         abortRef.current = null;
         // Reconcile with server (real ids, interaction id, title/order).
         if (activeId) {
@@ -154,6 +166,7 @@ export default function App() {
       },
       onError: (message) => {
         setStreaming(false);
+        setAgentEvents([]);
         abortRef.current = null;
         setMessages((prev) =>
           prev.map((m) =>
@@ -176,6 +189,7 @@ export default function App() {
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
+    setAgentEvents([]);
     // Reload to reflect whatever was persisted server-side.
     if (activeId) listMessages(activeId).then(setMessages).catch(() => {});
   }
@@ -217,6 +231,7 @@ export default function App() {
             conversation={active}
             messages={messages}
             streaming={streaming}
+            agentEvents={agentEvents}
             onSend={handleSend}
             onStop={handleStop}
           />
