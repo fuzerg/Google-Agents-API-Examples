@@ -83,12 +83,30 @@ def _stream_turn(conv: dict, user_text: str, assistant_msg_id: str) -> Iterator[
                     iid = getattr(inter, "id", None)
                     if iid:
                         interaction_id = iid
+                yield _sse("agent_event", {"event_type": event_type, "detail": str(event)})
 
             elif event_type == "step.delta":
                 text = _extract_text_delta(event)
                 if text:
                     accumulated += text
                     yield _sse("delta", {"text": text})
+
+            elif event_type in ("step.start", "step.stop", "interaction.status_update"):
+                # Serialize the Pydantic model directly to dictionary to send it as JSON
+                data_dict = {}
+                try:
+                    data_dict = event.model_dump(mode="json")
+                except AttributeError:
+                    try:
+                        # Fallback if it's not a standard Pydantic v2 model
+                        import pydantic
+                        if isinstance(event, pydantic.BaseModel):
+                            data_dict = event.model_dump()
+                        else:
+                            data_dict = {"event_type": event_type, "detail": str(event)}
+                    except Exception:
+                        data_dict = {"event_type": event_type, "detail": str(event)}
+                yield _sse("agent_event", {"event_type": event_type, "data": data_dict})
 
             elif event_type == "error":
                 err = getattr(event, "error", None)

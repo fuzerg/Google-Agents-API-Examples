@@ -82,6 +82,7 @@ export interface StreamHandlers {
   onDelta: (text: string) => void;
   onDone: (info: { message_id: string; interaction_id: string | null }) => void;
   onError: (message: string) => void;
+  onAgentEvent?: (payload: { event_type: string; data?: any; detail?: string }) => void;
 }
 
 /**
@@ -157,4 +158,5 @@ function dispatchFrame(frame: string, handlers: StreamHandlers) {
   if (event === "delta") handlers.onDelta(payload.text ?? "");
   else if (event === "done") handlers.onDone(payload);
   else if (event === "error") handlers.onError(payload.message ?? "Error");
+  else if (event === "agent_event") handlers.onAgentEvent?.(payload);
 }
