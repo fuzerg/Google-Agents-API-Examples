@@ -1,0 +1,116 @@
+# Default target repository for "feature" mode examples:
+#   https://github.com/fuzerg/Google-Agents-API-Examples
+id: app-developer-showcase
+base_agent: antigravity-preview-05-2026
+description: "A general-purpose coding agent that either scaffolds a brand-new application into a newly created GitHub repository, or implements a feature in an existing repository — writing tests, verifying them in the Cloud Sandbox, and publishing the result via GitHub's official remote MCP server (no self-hosted helper)."
+
+# The agent writes code AND proves it works before publishing: the code_execution
+# sandbox is used to install deps and run tests, while every GitHub operation
+# (create a repository, read files, create branches, commit/push, open PRs) is
+# handled by the remote MCP server declared below.
+tools:
+  - type: code_execution
+
+# ---------------------------------------------------------------------------
+# GitHub's official, fully-managed remote MCP server.
+#
+# The Gemini Enterprise Agent Platform securely routes the model's tool calls to
+# this URL, forwarding the headers built from `auth` below (baked into the
+# self-contained agent). Nothing to host.
+#
+# Auth: the remote server accepts any valid GitHub access token in the
+# Authorization header; here we pass a Personal Access Token (PAT) as a Bearer
+# token, interpolated at runtime from the GITHUB_TOKEN env var (loaded from this
+# template's .env), so no credential is stored in this file.
+#   Reference: https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
+#
+# `X-MCP-Toolsets` scopes the exposed tools to what this workflow needs:
+# repository operations (including `create_repository`, `push_files`) and pull
+# requests. Remove it for the full default toolset, or add `X-MCP-Readonly:
+# "true"` to forbid writes.
+#
+# NOTE: "greenfield" mode (creating a brand-new repo) requires the PAT to be
+# permitted to create repositories — e.g. a classic token with the `repo` scope.
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: github
+    url: https://api.githubcopilot.com/mcp/
+    enabled: true
+    auth:
+      headers:
+        Authorization: "Bearer ${GITHUB_TOKEN}"
+        X-MCP-Toolsets: "repos,pull_requests"
+
+environment:
+  type: "remote"
+  network:
+    allowlist:
+      - domain: "*"
+
+# The agent chooses its workflow from the prompt:
+#   * "Greenfield" — build a new app and create+push a new repository.
+#   * "Feature"    — implement a change in an existing repo and open a PR.
+# Each example is self-contained; greenfield runs create a new, uniquely named
+# repository so repeated runs don't collide.
+examples:
+  - title: "New CLI app -> new repo"
+    prompt: |
+      Build a brand-new, runnable Python command-line application called
+      "quote-of-the-day": it prints a random inspirational quote, supports a
+      `--author` filter, and ships a small built-in quote list. Include a proper
+      project layout (package module, unit tests, README, requirements/pyproject,
+      .gitignore).
+
+      Create a NEW public GitHub repository under my account named
+      "quote-of-the-day" (append a short unique suffix if that name is taken),
+      verify the tests pass in the sandbox, and push the project as the initial
+      commit on the default branch.
+
+  - title: "New Flask API -> new repo"
+    prompt: |
+      Build a brand-new, runnable Flask REST API for an in-memory task list
+      (create/list/get/update/delete tasks) with input validation, a health
+      endpoint, unit tests covering each route, a README with run instructions,
+      and requirements.txt.
+
+      Create a NEW public GitHub repository under my account named
+      "flask-task-api" (append a short unique suffix if that name is taken),
+      verify the tests pass in the sandbox, and push the project as the initial
+      commit on the default branch.
+
+  - title: "New React UI app -> new repo"
+    prompt: |
+      Build a brand-new React + Vite + TypeScript single-page "unit converter"
+      web app: a clean UI to convert length, weight, and temperature units, with
+      the conversion logic in a well-tested module and component tests (Vitest +
+      React Testing Library). Include a README with install/run/preview
+      instructions, package.json, and .gitignore.
+
+      You do NOT need to visually render the UI — verify it headlessly: the app
+      must type-check, build (`npm run build`), and pass all tests. Create a NEW
+      public GitHub repository under my account named "unit-converter-ui" (append
+      a short unique suffix if that name is taken) and push the project as the
+      initial commit on the default branch.
+
+  - title: "Feature into existing repo -> PR"
+    prompt: |
+      Implement a new, self-contained feature: a `slugify(text)` string utility
+      that converts arbitrary text into a URL-safe slug (lowercase, spaces and
+      punctuation collapsed to single hyphens, leading/trailing hyphens
+      trimmed). Add thorough unit tests and place the code in a new, clearly
+      named subdirectory so it does not touch existing files. Verify the tests
+      pass in the sandbox, then open a Pull Request.
+
+      Repository details:
+      - Repository Owner: fuzerg
+      - Repository Name: Google-Agents-API-Examples
+
+# The agent emits the marker matching what it produced: a repository URL for
+# greenfield runs, or a pull-request URL for feature runs.
+x-extract-messages:
+  - start: "__REPO_URL_START__"
+    end: "__REPO_URL_END__"
+    message: "New repository created successfully: {}"
+  - start: "__PR_URL_START__"
+    end: "__PR_URL_END__"
+    message: "Pull Request created successfully: {}"

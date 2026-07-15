@@ -40,12 +40,18 @@ agent_templates/
 │   ├── README.md
 │   └── mcp_server.py           # Local system monitor server
 │
-└── atlassian_chat_agent/       # Showcase 4: Atlassian Chat Agent (Remote MCP)
-    ├── agent.yaml
-    ├── AGENTS.md
+├── atlassian_chat_agent/       # Showcase 4: Atlassian Chat Agent (Remote MCP)
+│   ├── agent.yaml
+│   ├── AGENTS.md
+│   ├── README.md
+│   ├── demo/                   # End-to-end incident-triage demo + seeder
+│   └── .env.example            # Atlassian API-token credentials template
+│
+└── app_developer/              # Showcase 5: General-Purpose Coding Agent (Remote MCP)
+    ├── agent.yaml              # code_execution + GitHub remote MCP server
+    ├── AGENTS.md               # greenfield (new repo) or feature (existing repo -> PR)
     ├── README.md
-    ├── demo/                   # End-to-end incident-triage demo + seeder
-    └── .env.example            # Atlassian API-token credentials template
+    └── .env.example            # GITHUB_TOKEN (PAT for the MCP header)
 ```
 
 ### Two runners, one shared toolkit
@@ -188,4 +194,8 @@ Refer to the individual README files in each folder for specific prerequisites (
     *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
     *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
     *   Chat interactively: `./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent`
+5.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/app_developer/README.md)
+    *   *Turns a request into tested code on GitHub: builds a new app and creates+pushes a new repo (greenfield), or implements a feature in an existing repo and opens a PR (feature). Verifies tests in the sandbox before publishing, via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT — classic `repo` scope covers both modes); nothing to host.*
+    *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --list-tools`
+    *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer`
 
