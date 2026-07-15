@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Conversation, Message as MessageT } from "../types";
 import Message from "./Message";
 import Composer from "./Composer";
@@ -29,6 +29,7 @@ export default function ChatView({
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const eventsEndRef = useRef<HTMLDivElement>(null);
+  const [eventsOpen, setEventsOpen] = useState(true);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,30 +82,47 @@ export default function ChatView({
           {messages.map((m) => (
             <Message key={m.id} message={m} />
           ))}
-          {streaming && agentEvents.length > 0 && (
+          {agentEvents.length > 0 && (
             <div className="flex justify-start">
               <div className="flex w-full max-w-[80%] flex-col gap-2 rounded-2xl bg-neutral-900 border border-neutral-800 p-4 text-xs">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-1.5 mb-1 text-neutral-400 font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setEventsOpen((o) => !o)}
+                  title={eventsOpen ? "Collapse events" : "Expand events"}
+                  className="flex w-full cursor-pointer items-center justify-between border-b border-neutral-800 pb-1.5 mb-1 text-neutral-400 font-semibold hover:text-neutral-200"
+                >
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
+                    {streaming ? (
+                      <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
+                    ) : (
+                      <span className="h-2 w-2 rounded-full bg-neutral-600" />
+                    )}
                     Agent Intermediate Events
+                    {!streaming && (
+                      <span className="font-normal text-neutral-600">· done</span>
+                    )}
                   </span>
-                  <span>{agentEvents.length} events</span>
-                </div>
-                <div className="max-h-[160px] overflow-y-auto pr-1 flex flex-col gap-2.5 font-mono">
-                  {agentEvents.map((ev, i) => (
-                    <div key={i} className="flex flex-col gap-0.5 border-l-2 border-neutral-800 pl-2">
-                      <div className="flex items-center justify-between text-[10px] text-neutral-500">
-                        <span className="text-blue-400 font-bold">{ev.event_type}</span>
-                        <span>{ev.timestamp}</span>
+                  <span className="flex items-center gap-2 font-normal text-neutral-500">
+                    <span>{agentEvents.length} events</span>
+                    <span className="text-neutral-400">{eventsOpen ? "▾" : "▸"}</span>
+                  </span>
+                </button>
+                {eventsOpen && (
+                  <div className="h-40 min-h-[80px] max-h-[70vh] resize-y overflow-y-auto pr-1 flex flex-col gap-2.5 font-mono">
+                    {agentEvents.map((ev, i) => (
+                      <div key={i} className="flex flex-col gap-0.5 border-l-2 border-neutral-800 pl-2">
+                        <div className="flex items-center justify-between text-[10px] text-neutral-500">
+                          <span className="text-blue-400 font-bold">{ev.event_type}</span>
+                          <span>{ev.timestamp}</span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-neutral-300 break-all leading-relaxed">
+                          {ev.data ? JSON.stringify(ev.data, null, 2) : ev.detail}
+                        </div>
                       </div>
-                      <div className="whitespace-pre-wrap text-neutral-300 break-all leading-relaxed">
-                        {ev.data ? JSON.stringify(ev.data, null, 2) : ev.detail}
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={eventsEndRef} />
-                </div>
+                    ))}
+                    <div ref={eventsEndRef} />
+                  </div>
+                )}
               </div>
             </div>
           )}
