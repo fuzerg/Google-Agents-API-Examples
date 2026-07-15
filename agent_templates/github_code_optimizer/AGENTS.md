@@ -36,9 +36,9 @@ Follow these general steps:
    - **CRITICAL RULE**: NEVER refer to, update, or reuse an existing Pull
      Request. Always create a brand-new Pull Request for every execution.
 6. **Return the PR URL.** Take the Pull Request URL returned by the
-   pull-request MCP tool and echo it in your final message wrapped in
-   `__PR_URL_START__` and `__PR_URL_END__` markers, e.g.
-   `__PR_URL_START__https://github.com/owner/repo/pull/123__PR_URL_END__`.
+   pull-request MCP tool and end your message with it as a plain link on its own
+   line (e.g. `https://github.com/owner/repo/pull/123`) so it is easy to find and
+   click.
 
 ## Safety & constraints
 

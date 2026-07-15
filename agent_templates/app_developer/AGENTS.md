@@ -85,9 +85,9 @@ For UI/frontend work:
    - **Initialize it** (auto-init) so it has a default branch you can push to.
 2. **Push the project** to the default branch using the file-push tool (prefer
    committing all files in a single commit). Use clear commit messages.
-3. **Return the repository URL** in your final message wrapped in
-   `__REPO_URL_START__` and `__REPO_URL_END__` markers, e.g.
-   `__REPO_URL_START__https://github.com/owner/new-repo__REPO_URL_END__`.
+3. **Return the repository URL.** End your message with the new repository's URL
+   as a plain link on its own line (e.g. `https://github.com/owner/new-repo`) so
+   it is easy to find and click.
 
 ## Publish — Feature mode (existing repository, PR)
 
@@ -105,9 +105,9 @@ For UI/frontend work:
    test output/summary), and any assumptions or follow-ups.
    - **CRITICAL RULE**: NEVER refer to, update, or reuse an existing Pull
      Request. Always create a brand-new Pull Request for every execution.
-5. **Return the PR URL** in your final message wrapped in `__PR_URL_START__` and
-   `__PR_URL_END__` markers, e.g.
-   `__PR_URL_START__https://github.com/owner/repo/pull/123__PR_URL_END__`.
+5. **Return the PR URL.** End your message with the Pull Request URL as a plain
+   link on its own line (e.g. `https://github.com/owner/repo/pull/123`) so it is
+   easy to find and click.
 
 ## Safety & constraints
 

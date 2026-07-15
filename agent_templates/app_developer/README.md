@@ -91,10 +91,9 @@ just because the sandbox is headless.
         the full project to the default branch.
     *   *Feature* — creates a unique branch, commits the change, and opens a new
         Pull Request.
-5.  **URL extraction**: The agent wraps the resulting URL in
-    `__REPO_URL_START__`/`__REPO_URL_END__` (greenfield) or
-    `__PR_URL_START__`/`__PR_URL_END__` (feature); `prober.py` parses and prints
-    it (`x-extract-messages`).
+5.  **Result**: The agent ends its message with the resulting URL as a plain,
+    clickable link — a new repository URL (greenfield) or a Pull Request URL
+    (feature).
 
 ---
 
@@ -151,7 +150,7 @@ export GITHUB_TOKEN="github_pat_your_token_value_here"
     ./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --check
     ./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --list-tools
     ```
-2.  **Run the bundled examples** (two greenfield, one feature):
+2.  **Run the bundled examples** (three greenfield, one feature):
     ```bash
     ./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer
     ```
@@ -165,8 +164,12 @@ export GITHUB_TOKEN="github_pat_your_token_value_here"
     ./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer \
       "Add a retry decorator with exponential backoff and tests. Repository Owner: fuzerg, Repository Name: Google-Agents-API-Examples"
     ```
-4.  The agent streams its progress. When finished you will see either:
+4.  The agent streams its progress and ends with the resulting URL as a plain,
+    clickable link — either a new repository:
     ```
-    ✨ New repository created successfully: https://github.com/your_username/quote-of-the-day
-    ✨ Pull Request created successfully: https://github.com/owner/repo/pull/99
+    https://github.com/your_username/quote-of-the-day
+    ```
+    or a Pull Request:
+    ```
+    https://github.com/owner/repo/pull/99
     ```

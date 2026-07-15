@@ -104,13 +104,3 @@ examples:
       Repository details:
       - Repository Owner: fuzerg
       - Repository Name: Google-Agents-API-Examples
-
-# The agent emits the marker matching what it produced: a repository URL for
-# greenfield runs, or a pull-request URL for feature runs.
-x-extract-messages:
-  - start: "__REPO_URL_START__"
-    end: "__REPO_URL_END__"
-    message: "New repository created successfully: {}"
-  - start: "__PR_URL_START__"
-    end: "__PR_URL_END__"
-    message: "Pull Request created successfully: {}"
