@@ -186,7 +186,7 @@ def run_examples(client, agent_resource, template_dir, config, agent_id,
             final_text, _ = ak.stream_interaction(
                 client, agent_resource, prompt,
                 environment=interaction_environment,
-                renderer=ak.SimpleRenderer(),
+                renderer=ak.Renderer(),
             )
             print(f"\nInteraction {i + 1} finished successfully.")
 

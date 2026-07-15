@@ -73,7 +73,8 @@ def run_repl(client, agent_resource: str, stream: bool) -> None:
             _, iid = ak.stream_interaction(
                 client, agent_resource, prompt,
                 previous_interaction_id=previous_id,
-                stream=stream, renderer=ak.RichRenderer(),
+                stream=stream,
+                renderer=ak.Renderer(color=True, show_thoughts=True, show_tools=True),
             )
             if iid:
                 previous_id = iid

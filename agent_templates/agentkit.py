@@ -20,8 +20,8 @@ This module holds the code both runners need so it lives in exactly one place:
   * Enterprise Gen AI client initialization (Interactions API)
   * agent.yaml / AGENTS.md loading
   * Control Plane: register / delete a custom agent (with LRO polling)
-  * Data Plane: run a streaming (or synchronous) interaction, with pluggable
-    renderers (`SimpleRenderer` for plain runners, `RichRenderer` for chat)
+  * Data Plane: run a streaming (or synchronous) interaction, with a pluggable
+    `Renderer` (flag-driven: plain for runners, colored/verbose for chat)
   * Generic MCP helpers: build an Authorization header from an `auth` block,
     turn `mcp_servers` into tool specs, and a raw MCP connectivity preflight
 
@@ -553,34 +553,34 @@ def agent_resource_name(agent: str, project: str, location: str = LOCATION) -> s
 # ---------------------------------------------------------------------------
 # Data Plane: streaming interactions + renderers.
 # ---------------------------------------------------------------------------
-class SimpleRenderer:
-    """Plain renderer: prints text and code-execution results inline."""
+class Renderer:
+    """Streams interaction events to stdout, with pluggable verbosity.
 
-    def handle_event(self, event: Any) -> None:
-        if getattr(event, "event_type", None) != "step.delta":
-            return
-        delta = getattr(event, "delta", None)
-        if delta is None:
-            return
-        dtype = getattr(delta, "type", None)
-        if dtype == "text":
-            text = getattr(delta, "text", "") or ""
-            if text:
-                print(text, end="", flush=True)
-        elif dtype == "code_execution_result":
-            result = getattr(delta, "result", "") or ""
-            if result:
-                print(result, end="", flush=True)
+    Flags select what to surface and how:
+      * color         - apply ANSI colors and the decorated (labeled, line-
+                        broken) layout for non-text events; when off, text and
+                        code results are printed raw and inline.
+      * show_thoughts - surface `thought_summary` deltas.
+      * show_tools    - surface MCP tool-call / tool-result deltas.
 
-    def finish(self) -> None:
-        print()
+    The former presets map onto flags: plain runners use `Renderer()` (all off)
+    and chat uses `Renderer(color=True, show_thoughts=True, show_tools=True)`.
+    """
 
-
-class RichRenderer:
-    """Colored renderer that also surfaces thoughts and MCP tool-call events."""
-
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        color: bool = False,
+        show_thoughts: bool = False,
+        show_tools: bool = False,
+    ) -> None:
+        self.color = color
+        self.show_thoughts = show_thoughts
+        self.show_tools = show_tools
         self._in_text = False
+
+    def _c(self, text: str, color: str) -> str:
+        return c(text, color) if self.color else text
 
     def _break_text(self) -> None:
         if self._in_text:
@@ -600,12 +600,22 @@ class RichRenderer:
             if text:
                 print(text, end="", flush=True)
                 self._in_text = True
-        elif dtype == "thought_summary":
+        elif dtype == "code_execution_result":
+            result = getattr(delta, "result", "") or ""
+            if not result:
+                return
+            if self.color:
+                self._break_text()
+                print(self._c(f"  [code result] {result}", C.DIM))
+            else:
+                print(result, end="", flush=True)
+                self._in_text = True
+        elif dtype == "thought_summary" and self.show_thoughts:
             thought = getattr(delta, "text", "") or getattr(delta, "summary", "")
             if thought:
                 self._break_text()
-                print(c(f"  [thinking] {thought}", C.DIM))
-        elif dtype == "mcp_server_tool_call":
+                print(self._c(f"  [thinking] {thought}", C.DIM))
+        elif dtype == "mcp_server_tool_call" and self.show_tools:
             self._break_text()
             server = getattr(delta, "server_name", "?")
             name = getattr(delta, "name", "?")
@@ -613,15 +623,10 @@ class RichRenderer:
             args_str = json.dumps(args, ensure_ascii=False) if args else "{}"
             if len(args_str) > 200:
                 args_str = args_str[:200] + "..."
-            print(c(f"  \u2192 tool call [{server}.{name}] {args_str}", C.BLUE))
-        elif dtype == "mcp_server_tool_result":
+            print(self._c(f"  \u2192 tool call [{server}.{name}] {args_str}", C.BLUE))
+        elif dtype == "mcp_server_tool_result" and self.show_tools:
             self._break_text()
-            print(c("  \u2190 tool result received", C.BLUE))
-        elif dtype == "code_execution_result":
-            result = getattr(delta, "result", "") or ""
-            if result:
-                self._break_text()
-                print(c(f"  [code result] {result}", C.DIM))
+            print(self._c("  \u2190 tool result received", C.BLUE))
 
     def finish(self) -> None:
         self._break_text()
@@ -676,7 +681,7 @@ def stream_interaction(
         print(final_text)
         return final_text, getattr(interaction, "id", None)
 
-    active_renderer = renderer if renderer is not None else SimpleRenderer()
+    active_renderer = renderer if renderer is not None else Renderer()
     final_text = ""
     interaction_id = None
     response_stream = client.interactions.create(
