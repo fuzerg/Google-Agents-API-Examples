@@ -162,6 +162,15 @@ def delete_conversation(conv_id: str) -> dict:
     return {"deleted": True}
 
 
+@app.post("/api/conversations/{conv_id}/clear")
+def clear_conversation(conv_id: str) -> dict:
+    if not db.get_conversation(conv_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.clear_conversation_messages(conv_id)
+    return {"cleared": True}
+
+
+
 @app.get(
     "/api/conversations/{conv_id}/messages", response_model=list[Message]
 )
