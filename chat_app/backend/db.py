@@ -254,3 +254,12 @@ def list_messages(conversation_id: str) -> list[dict[str, Any]]:
             (conversation_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def clear_conversation_messages(conversation_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        conn.execute(
+            "UPDATE conversations SET last_interaction_id = NULL, updated_at = ? WHERE id = ?",
+            (_now(), conversation_id),
+        )
