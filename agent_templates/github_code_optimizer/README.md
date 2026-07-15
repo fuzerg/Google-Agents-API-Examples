@@ -72,9 +72,8 @@ Token.
 4.  **PR creation**: The agent calls the GitHub MCP tools to create a unique
     branch, commit the optimized file, and open a **new** Pull Request back to
     `main` with the benchmark results and an explanation of the speedup.
-5.  **PR URL extraction**: The agent wraps the resulting PR URL in
-    `__PR_URL_START__`/`__PR_URL_END__` markers; `prober.py` parses and prints
-    it (`x-extract-messages`).
+5.  **Result**: The agent ends its message with the resulting Pull Request URL
+    as a plain, clickable link.
 
 ---
 
@@ -126,8 +125,8 @@ forbid writes. See the
     ```bash
     ./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer
     ```
-3.  The agent streams its progress. When finished you will see the created Pull
-    Request URL:
+3.  The agent streams its progress and ends with the created Pull Request URL as
+    a plain, clickable link:
     ```
-    ✨ Automated Pull Request created successfully: https://github.com/your_github_username/your_repository_name/pull/99
+    https://github.com/your_github_username/your_repository_name/pull/99
     ```
