@@ -30,6 +30,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showNewChat, setShowNewChat] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [agentEvents, setAgentEvents] = useState<{ event_type: string; data?: any; detail?: string; timestamp: string }[]>([]);
   const [connected, setConnected] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -84,6 +85,9 @@ export default function App() {
   }
 
   useEffect(() => {
+    // Switching conversations: drop the previous turn's debug events so they
+    // don't linger under a different chat.
+    setAgentEvents([]);
     if (!activeId) {
       setMessages([]);
       return;
@@ -129,6 +133,7 @@ export default function App() {
     assistantMsg.status = "streaming";
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
+    setAgentEvents([]);
 
     abortRef.current = streamMessage(activeId, text, {
       onDelta: (delta) => {
@@ -140,8 +145,19 @@ export default function App() {
           )
         );
       },
+      onAgentEvent: (event) => {
+        setAgentEvents((prev) => [
+          ...prev,
+          {
+            ...event,
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      },
       onDone: async () => {
         setStreaming(false);
+        // Keep agentEvents so the user can still inspect the intermediate
+        // events after the response is delivered (cleared on the next send).
         abortRef.current = null;
         // Reconcile with server (real ids, interaction id, title/order).
         if (activeId) {
@@ -154,6 +170,7 @@ export default function App() {
       },
       onError: (message) => {
         setStreaming(false);
+        // Preserve events on error too — they're often what you need to debug.
         abortRef.current = null;
         setMessages((prev) =>
           prev.map((m) =>
@@ -176,6 +193,7 @@ export default function App() {
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
+    // Keep the events collected so far so they remain inspectable after a stop.
     // Reload to reflect whatever was persisted server-side.
     if (activeId) listMessages(activeId).then(setMessages).catch(() => {});
   }
@@ -217,6 +235,7 @@ export default function App() {
             conversation={active}
             messages={messages}
             streaming={streaming}
+            agentEvents={agentEvents}
             onSend={handleSend}
             onStop={handleStop}
           />
