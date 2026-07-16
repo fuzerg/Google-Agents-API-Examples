@@ -23,30 +23,9 @@ agent_templates/
 ├── chat.py                     # Template-agnostic interactive multi-turn chat client
 │
 ├── financial_analyst/          # Showcase 1: Smart Financial Analyst
-│   ├── agent.yaml
-│   ├── AGENTS.md
-│   ├── README.md
-│   └── skills/                 # Custom GCS-mounted helper module
-│
 ├── github_code_optimizer/      # Showcase 2: GitHub Code Optimizer (Remote MCP)
-│   ├── agent.yaml              # code_execution + GitHub remote MCP server
-│   ├── AGENTS.md
-│   ├── README.md
-│   └── .env                    # GITHUB_TOKEN (git-ignored; PAT for the MCP header)
-│
 ├── atlassian_chat_agent/       # Showcase 3: Atlassian Chat Agent (Remote MCP)
-│   ├── agent.yaml
-│   ├── AGENTS.md
-│   ├── README.md
-│   ├── demo/                   # End-to-end incident-triage demo + seeder
-│   └── .env.example            # Atlassian API-token credentials template
-│
 └── app_developer/              # Showcase 4: General-Purpose Coding Agent (Remote MCP)
-    ├── agent.yaml              # code_execution + GitHub remote MCP server
-    ├── AGENTS.md               # greenfield (new repo) or feature (existing repo -> PR)
-    ├── README.md
-    ├── skills/                 # GCS-mounted playwright_visual_testing skill
-    └── .env.example            # GITHUB_TOKEN (PAT for the MCP header)
 ```
 
 ### Two runners, one shared toolkit
