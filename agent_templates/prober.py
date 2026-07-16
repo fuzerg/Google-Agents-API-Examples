@@ -19,14 +19,6 @@ custom agent on Vertex AI (Control Plane) — baking in its tools, including any
 remote MCP servers with their auth headers — and runs the template's declared
 `examples` as stateful, streaming, single-turn interactions (Data Plane).
 
-It works for every template in this repo:
-  * skills-based templates: local `skills/` are uploaded to GCS and mounted, and
-    the `x-env-secrets`, `x-output-mount`, and `x-extract-messages` extensions
-    are honored.
-  * MCP templates: each `mcp_servers` entry (with its own per-server `auth`)
-    becomes an `mcp_server` tool with an Authorization header, baked into the
-    agent so it is self-contained.
-
 Because the agent is self-contained, you can also keep it (`--keep-agent`) and
 then chat with it interactively via the sibling `chat.py` (a template-agnostic
 interactive client): `chat.py --agent <id>`.
@@ -36,9 +28,6 @@ Usage:
   python3 agent_templates/prober.py <template_dir> --check        # MCP preflight
   python3 agent_templates/prober.py <template_dir> --list-tools
   python3 agent_templates/prober.py <template_dir> --keep-agent   # keep + print id
-
-Shared logic (auth, client, control plane, streaming) lives alongside this
-script in `agentkit.py`; interactive multi-turn chat lives in `chat.py`.
 """
 
 import argparse
@@ -162,7 +151,6 @@ def run_examples(client, agent_resource, template_dir, config, agent_id,
         examples = config.get("examples", []) or [{"title": "default_run", "prompt": "Hello"}]
 
     output_mount = config.get("x-output-mount")
-    extract_msgs = config.get("x-extract-messages", [])
 
     for i, example in enumerate(examples):
         prompt = example.get("prompt", "Hello")
@@ -183,7 +171,7 @@ def run_examples(client, agent_resource, template_dir, config, agent_id,
         ak.rule(f"[{i + 1}/{len(examples)}] {title}")
         print(f"Prompt: {prompt}\n")
         try:
-            final_text, _ = ak.stream_interaction(
+            ak.stream_interaction(
                 client, agent_resource, prompt,
                 environment=interaction_environment,
                 renderer=ak.SimpleRenderer(),
@@ -204,15 +192,6 @@ def run_examples(client, agent_resource, template_dir, config, agent_id,
                     ak.ok(f"Output files saved to: {local_output_dir}")
                 else:
                     ak.warn(f"Failed to download output files: {res.stderr}")
-
-            for ext in extract_msgs:
-                start, end = ext.get("start"), ext.get("end")
-                template = ext.get("message", "Extracted: {}")
-                if start in final_text and end in final_text:
-                    s = final_text.find(start) + len(start)
-                    e = final_text.find(end, s)
-                    if e > s:
-                        print(f"\n\u2728 {template.format(final_text[s:e].strip())}")
         except Exception as e:  # noqa: BLE001
             ak.err(f"An error occurred during interaction {i + 1}: {e}")
 

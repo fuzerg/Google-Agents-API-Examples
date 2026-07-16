@@ -110,7 +110,6 @@ standard `mcp_server` tool `headers` field.
 These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate advanced local/remote testing workflows.
 *   **`x-output-mount`**: Specifies an absolute path inside the agent's sandbox (e.g., `/workspace/output`) where generated files (like PDFs or charts) will be saved. `prober.py` dynamically creates a unique GCS bucket folder for each example, maps it to this target during execution, and then automatically syncs all generated files back to your local workspace (`output_{example_title}`) when the interaction completes.
 *   **`x-env-secrets`**: A list of local environment variable names (e.g., `- GITHUB_TOKEN`). `prober.py` will read these variables from your host machine and securely inject them as `.env` files into any local `skills/` directories before uploading them to the cloud.
-*   **`x-extract-messages`**: A list of parsing rules to extract specific text blocks from the agent's streaming output based on `start` and `end` string markers.
 
 ### Test Cases (`examples`)
 *   **`examples`**: A list of test iterations the prober will run sequentially.

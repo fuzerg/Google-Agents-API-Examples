@@ -684,8 +684,8 @@ def stream_interaction(
     )
     for event in response_stream:
         active_renderer.handle_event(event)
-        # Accumulate text for callers that need the transcript (e.g. prober's
-        # x-extract-messages), independent of how the renderer displays it.
+        # Accumulate text for callers that need the transcript, independent of
+        # how the renderer displays it.
         if getattr(event, "event_type", None) == "step.delta":
             delta = getattr(event, "delta", None)
             if delta is not None and getattr(delta, "type", None) == "text":
