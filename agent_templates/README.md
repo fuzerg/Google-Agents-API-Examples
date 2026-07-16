@@ -45,6 +45,7 @@ agent_templates/
     ├── agent.yaml              # code_execution + GitHub remote MCP server
     ├── AGENTS.md               # greenfield (new repo) or feature (existing repo -> PR)
     ├── README.md
+    ├── skills/                 # GCS-mounted playwright_visual_testing skill
     └── .env.example            # GITHUB_TOKEN (PAT for the MCP header)
 ```
 
