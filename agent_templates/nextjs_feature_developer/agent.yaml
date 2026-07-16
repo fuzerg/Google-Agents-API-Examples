@@ -1,0 +1,28 @@
+id: phase-3-feature-developer
+base_agent: antigravity-preview-05-2026
+description: "Implements new features by reading Jira tickets and opening Pull Requests."
+tools:
+  - type: code_execution
+environment:
+  type: "remote"
+  sources:
+    - type: "gcs"
+      source: "gs://${GCS_BUCKET}/enterprise_integration"
+      target: "/.agents/skills/enterprise_integration"
+  network:
+    allowlist:     
+      - domain: "*"
+x-env-secrets:
+  enterprise_integration:
+    - JIRA_URL
+    - JIRA_USER
+    - JIRA_API_TOKEN
+    - CONFLUENCE_URL
+
+x-output-mount: "/workspace/output"
+
+examples:
+  - title: "Read Ticket"
+    prompt: "I want you to implement the feature described in Jira ticket PROJECT-123. Start by reading the ticket."
+  - title: "Draft Design"
+    prompt: "Based on the ticket you just read, generate a technical design document, publish it to Confluence, and also save a local copy of the markdown document to /workspace/output/design_doc.md"
