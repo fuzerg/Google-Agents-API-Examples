@@ -1,0 +1,19 @@
+id: nextjs-issue-resolver
+base_agent: antigravity-preview-05-2026
+description: "Resolves GitHub issues on an existing codebase."
+environment:
+  type: "remote"
+  sources: []
+  network:
+    allowlist:     
+      - domain: "*"
+
+x-env-secrets:
+  github_integration:
+    - GITHUB_TOKEN
+
+x-output-mount: "/workspace/output"
+
+examples:
+  - title: "Resolve Issue and Add Tests"
+    prompt: "Issue #1 states: 'The main page needs a clear title that says Agent Dashboard, and we need a unit test to guarantee it stays there.' Please clone the repository `https://${GITHUB_TOKEN}@github.com/ayushiagarwal11-eng/agent-dashboard-test.git` into `/workspace/local-temp/issue-fix`. Edit `src/app/page.tsx` to include an `<h1>Agent Dashboard</h1>` tag. Next, install Jest and React Testing Library (`npm install -D jest jest-environment-jsdom @testing-library/react @testing-library/dom @testing-library/jest-dom`), configure Jest for Next.js, and write a unit test in `src/app/page.test.tsx` that asserts the 'Agent Dashboard' text is rendered. Verify everything works by running `. ~/.nvm/nvm.sh && nvm use 20 && npm run build && npm test`. Only if the unit tests pass, commit the changes with message 'fix: add Agent Dashboard title with unit tests (fixes #1)' and push it to origin master."
