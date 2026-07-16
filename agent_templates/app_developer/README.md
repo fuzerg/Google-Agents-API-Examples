@@ -35,6 +35,12 @@ Library render to a virtual DOM, no real browser). The generated README includes
 review is the one step left to a human. The agent will not refuse a frontend task
 just because the sandbox is headless.
 
+A bundled **`playwright_visual_testing`** skill (in `skills/`, GCS-mounted into the
+sandbox at `/.agents/skills/playwright_visual_testing`) gives the agent an optional,
+tested recipe for **headless** browser visual/layout verification — installing the
+browser dependencies, writing a visual spec, and safely handling PNG screenshot
+binaries. It is a bonus the agent may use for UI work, never a requirement.
+
 ---
 
 ## How It Works
