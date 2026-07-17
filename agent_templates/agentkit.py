@@ -653,7 +653,7 @@ def stream_interaction(
     stream: bool = True,
     background: bool = True,
     store: bool = True,
-    timeout: int = 900,
+    timeout: int = 3600,
     renderer: Optional[Any] = None,
 ) -> Tuple[str, Optional[str]]:
     """Run one interaction turn. Returns (final_text, interaction_id).
