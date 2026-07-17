@@ -38,7 +38,7 @@ You can watch the agent scaffold the app, build it, and push it live by running 
    ```
 2. Run the prober for the App Builder template:
    ```bash
-   python3 agent_templates/prober_lifecycle.py agent_templates/nextjs_app_builder
+   python3 agent_templates/prober.py agent_templates/nextjs_app_builder
    ```
    *(You will see the agent executing commands in the terminal. When finished, check your remote GitHub repository!)*
 

@@ -5,19 +5,16 @@ tools:
   - type: code_execution
 environment:
   type: "remote"
-  sources:
-    - type: "gcs"
-      source: "gs://${GCS_BUCKET}/enterprise_integration"
-      target: "/.agents/skills/enterprise_integration"
   network:
     allowlist:     
       - domain: "*"
-x-env-secrets:
-  enterprise_integration:
-    - JIRA_URL
-    - JIRA_USER
-    - JIRA_API_TOKEN
-    - CONFLUENCE_URL
+mcp_servers:
+  - name: atlassian
+    url: https://mcp.atlassian.com/v1/mcp
+    enabled: true
+    auth:
+      headers:
+        Authorization: "Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}"
 
 x-output-mount: "/workspace/output"
 
