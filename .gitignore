@@ -28,3 +28,4 @@ agent_templates/**/client_secret.json
 
 # Agent platform local configs/logs
 .agents/
+local-temp/

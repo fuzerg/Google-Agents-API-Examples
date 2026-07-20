@@ -1,0 +1,25 @@
+id: phase-3-feature-developer
+base_agent: antigravity-preview-05-2026
+description: "Implements new features by reading Jira tickets and opening Pull Requests."
+tools:
+  - type: code_execution
+environment:
+  type: "remote"
+  network:
+    allowlist:     
+      - domain: "*"
+mcp_servers:
+  - name: atlassian
+    url: https://mcp.atlassian.com/v1/mcp
+    enabled: true
+    auth:
+      headers:
+        Authorization: "Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}"
+
+x-output-mount: "/workspace/output"
+
+examples:
+  - title: "Read Ticket"
+    prompt: "I want you to implement the feature described in Jira ticket PROJECT-123. Start by reading the ticket."
+  - title: "Draft Design"
+    prompt: "Based on the ticket you just read, generate a technical design document, publish it to Confluence, and also save a local copy of the markdown document to /workspace/output/design_doc.md"
