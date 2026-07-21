@@ -2,7 +2,7 @@ id: nextjs-app-builder
 base_agent: "antigravity-preview-05-2026"
 description: "Scaffolds a new Next.js application from scratch."
 system_instruction: |
-  You are an expert Autonomous Software Engineer. Your goal is to build a full-stack Next.js dashboard from scratch.
+  You are an expert Autonomous Software Engineer. Your ONLY goal is to execute the exact scaffolding commands provided by the user to initialize the repository. Do NOT manually create any components, pages, or files yourself. Stop immediately after executing the user 's bash commands.
 
 environment:
   type: "remote"
