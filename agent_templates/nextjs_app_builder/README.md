@@ -25,7 +25,7 @@ Normally, Vertex Agent Engine tools run in an isolated cloud sandbox. However, s
 The agent writes the code to a temporary local folder (`/workspace/local-temp/dashboard`) instead of directly to `/workspace/output`. This is a critical workaround because `/workspace/output` maps to a GCSFuse mount, which lacks `mmap` support and breaks `npm` and `git` operations. Once the agent is done building, testing, and pushing from the local folder, it uses `rsync` to sync the final result over to `/workspace/output`.
 
 ### 3. GitHub Authentication
-Because the execution was moved locally by `prober.py`, cloud-native secrets injection (like `x-env-secrets`) is bypassed. To authenticate with GitHub, the prompt inside `agent.yaml` is configured with an **explicit Personal Access Token (PAT) URL** (e.g., `https://ghp_YOUR_TOKEN@github.com/...`). This allows the local `git push` command to succeed seamlessly.
+Because the execution was moved locally by `prober.py`, cloud-native secrets injection is bypassed. To authenticate with GitHub, the prompt inside `agent.yaml` is configured with an **explicit Personal Access Token (PAT) URL** (e.g., `https://ghp_YOUR_TOKEN@github.com/...`). This allows the local `git push` command to succeed seamlessly.
 
 ## How to Test This Locally
 

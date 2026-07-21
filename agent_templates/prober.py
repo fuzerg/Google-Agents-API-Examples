@@ -99,47 +99,31 @@ def assemble_tools(config):
     return tools, servers
 
 
-def upload_skills(template_dir, config, project_id, gcs_bucket):
-    """Inject x-env-secrets, then upload local skills/ to GCS (skills templates)."""
+def upload_skills(template_dir, gcs_bucket):
+    """Upload the template's local skills/ directory to GCS (skills templates)."""
     local_skills_dir = os.path.join(template_dir, "skills")
     if not os.path.exists(local_skills_dir):
         return
 
-    secrets_config = config.get("x-env-secrets", {})
-    created_env_files = []
-    for skill_name, secrets in secrets_config.items():
-        skill_dir = os.path.join(local_skills_dir, skill_name)
-        if os.path.exists(skill_dir):
-            env_path = os.path.join(skill_dir, ".env")
-            with open(env_path, "w") as f:
-                for secret in secrets:
-                    f.write(f'{secret}="{os.environ.get(secret, "")}"\n')
-            created_env_files.append(env_path)
-
-    try:
-        bucket_url = f"gs://{gcs_bucket}"
-        exists = subprocess.run(
-            ["gcloud", "storage", "buckets", "describe", bucket_url],
-            capture_output=True,
-        ).returncode == 0
-        if not exists:
-            print(f"Creating GCS bucket {bucket_url}...")
+    bucket_url = f"gs://{gcs_bucket}"
+    exists = subprocess.run(
+        ["gcloud", "storage", "buckets", "describe", bucket_url],
+        capture_output=True,
+    ).returncode == 0
+    if not exists:
+        print(f"Creating GCS bucket {bucket_url}...")
+        subprocess.run(
+            ["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"],
+            check=True,
+        )
+    for skill_name in os.listdir(local_skills_dir):
+        skill_path = os.path.join(local_skills_dir, skill_name)
+        if os.path.isdir(skill_path):
+            print(f"Uploading skill files from '{skill_path}' to {bucket_url}/...")
             subprocess.run(
-                ["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"],
+                ["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"],
                 check=True,
             )
-        for skill_name in os.listdir(local_skills_dir):
-            skill_path = os.path.join(local_skills_dir, skill_name)
-            if os.path.isdir(skill_path):
-                print(f"Uploading skill files from '{skill_path}' to {bucket_url}/...")
-                subprocess.run(
-                    ["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"],
-                    check=True,
-                )
-    finally:
-        for env_file in created_env_files:
-            if os.path.exists(env_file):
-                os.remove(env_file)
 
 
 def run_examples(client, agent_resource, template_dir, config, agent_id,
@@ -237,7 +221,7 @@ def main() -> int:
     env_config = config.get("environment", {}) or {}
 
     # Upload skills to GCS if the template has a skills/ dir.
-    upload_skills(template_dir, config, project_id, gcs_bucket)
+    upload_skills(template_dir, gcs_bucket)
 
     # Control Plane: register the self-contained agent (tools baked in).
     base_environment = ak.default_base_environment(env_config, allow_network=bool(servers))
