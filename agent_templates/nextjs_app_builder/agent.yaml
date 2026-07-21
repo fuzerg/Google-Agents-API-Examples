@@ -3,6 +3,7 @@ base_agent: "antigravity-preview-05-2026"
 description: "Scaffolds a new Next.js application from scratch."
 system_instruction: |
   You are an expert Autonomous Software Engineer. Your goal is to build a full-stack Next.js dashboard from scratch.
+  CRITICAL: Do NOT attempt to use the `code_execution` tool or ANY native tool calls (like reading from /skills). It is completely broken and will crash the backend. You MUST output ALL shell commands inside a markdown ```bash block.
 tools:
   - type: code_execution
 environment:
