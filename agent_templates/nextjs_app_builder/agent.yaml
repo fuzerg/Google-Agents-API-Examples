@@ -12,7 +12,12 @@ environment:
     allowlist:     
       - domain: "*"
 
+x-env-secrets:
+  github_integration:
+    - GITHUB_TOKEN
+
+x-output-mount: "/workspace/output"
 
 examples:
   - title: "Create NextJS App"
-    prompt: "I want to build a new full-stack Next.js dashboard. Please output the following bash script exactly as written in a markdown ```bash block:\n```bash\nexport CI=1 && mkdir -p /tmp/dashboard\ncd /tmp/dashboard && yes | npx create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --use-npm --yes --disable-git --skip-install\ncd /tmp/dashboard && export CI=1 && . ~/.nvm/nvm.sh && nvm use 20 && npm install --no-audit --no-fund\ncd /tmp/dashboard && npm run build\ncd /tmp/dashboard && npm run lint\n```\n\nStop immediately after outputting this script. DO NOT run any git commands. DO NOT access /skills."
+    prompt: "I want to build a new full-stack Next.js dashboard. Please output the following bash script exactly as written in a markdown ```bash block:\n```bash\nexport CI=1 && mkdir -p /tmp/dashboard\ncd /tmp/dashboard && yes | npx create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --use-npm --yes --disable-git --skip-install\ncd /tmp/dashboard && export CI=1 && . ~/.nvm/nvm.sh && nvm use 20 && npm install --no-audit --no-fund\ncd /tmp/dashboard && npm run build\ncd /tmp/dashboard && npm run lint\ncd /tmp/dashboard && git init && git config user.name 'Agent' && git config user.email 'agent@test.com' && git checkout -b master && git add . && git commit -m 'init'\ncd /tmp/dashboard && git push --force https://${GITHUB_TOKEN}@github.com/ayushiagarwal11-eng/agent-dashboard-test.git master\nrsync -a --exclude node_modules --exclude .git /tmp/dashboard/ /workspace/output/dashboard/\n```\n\nStop immediately after outputting this script. DO NOT access /skills."
