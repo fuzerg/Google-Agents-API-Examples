@@ -13,6 +13,7 @@ Each example is housed in its own folder and contains:
 2.  **`AGENTS.md`**: Provides the system instructions that define the agent's persona and core workflows.
 3.  **`README.md`**: Contains detailed setups, flow diagrams, and specific prerequisites for the example.
 4.  **`skills/`** (Optional): Mounted custom Python helpers or instructions loaded into the agent's runtime environment.
+5.  **`.env`** (Optional, git-ignored): Local credentials (e.g. API tokens) that `prober.py` auto-loads before parsing `agent.yaml`. Templates that need secrets typically ship a **`.env.example`** to copy from. See [Environment Variables & `.env`](#environment-variables--env).
 
 ```
 agent_templates/
@@ -40,17 +41,47 @@ and live next to `agentkit.py`; each entrypoint stays thin:
     (baking in the template's tools, including remote MCP servers with their auth
     headers) and runs the `examples` from `agent.yaml`. Flags: `--check` /
     `--list-tools` (MCP preflight), `--keep-agent` (keep + print the agent id).
-*   **`chat.py`** — a template-agnostic **interactive multi-turn chat client**.
-    Point it at an existing agent (`--agent <id>`) or have it provision one from
-    any template (`--from-template <dir>`), then chat. Because prober registers
-    agents self-contained, a thin client can drive them with just
-    `{agent, input}`.
+*   **`chat.py --agent <id>`** — a template-agnostic **interactive multi-turn
+    chat client**. Point it at an existing self-contained agent (e.g. one kept
+    with `prober.py <template> --keep-agent`) and chat. It never provisions or
+    deletes agents — because prober registers agents self-contained, this thin
+    client can drive them with just `{agent, input}`.
 
 ---
 
 ## Unified `agent.yaml` Configuration
 
 Each showcase template relies on a declarative `agent.yaml` file that defines the agent's properties, tools, runtime environment, and test examples. The `prober.py` script automatically parses this file and uses it to provision the agent in the cloud.
+
+### Environment Variables & `.env`
+
+`agent.yaml` is declarative but can reference environment variables, so no secrets
+or machine-specific values are hardcoded in the file. When `prober.py` loads a
+template, env vars are resolved in two steps:
+
+1.  **`.env` auto-load.** If the template directory has a `.env`, `prober.py` loads
+    its `KEY=VALUE` lines into the process environment *first* (via
+    `agentkit.load_dotenv`). The parser is dependency-free: it skips blank lines and
+    `#` comments, tolerates a leading `export `, and strips surrounding quotes.
+    **Shell-exported variables win** — a value already set in your shell is never
+    overridden by `.env`. Templates that need credentials typically ship a
+    `.env.example`; copy it to `.env` and fill in your values (`.env` is git-ignored).
+2.  **`${VAR}` expansion.** The raw YAML text is expanded *before* it is parsed, so
+    `${VAR}` / `$VAR` anywhere in the file is substituted with the corresponding
+    environment value — e.g. `source: gs://${GCS_BUCKET}/financial_analyst`. An
+    **unset** variable is left **literally in place** (e.g. `${MISSING}`) rather than
+    raising, so double-check spelling for optional fields.
+
+`prober.py` also sets a couple of variables for you before expansion:
+*   **`GCS_BUCKET`** — defaults to `<project>-agent-skills` (override with the
+    `GCS_BUCKET_NAME` env var); referenced by skill `source:` mounts.
+*   **`MCP_SERVER_URL`** — normalized to end in `/sse` for self-hosted MCP templates.
+
+> **Note:** values inside an `mcp_servers[].auth.headers` block use a *stricter*
+> interpolation than the whole-file pass above: it additionally supports the
+> `${base64:...}` transform and **raises a clear error on an unset variable** (so a
+> missing token fails fast instead of shipping a broken header). See
+> [Header value interpolation](#remote-mcp-servers-mcp_servers) below.
 
 ### Core Fields
 *   **`id`**: A unique string identifier for the agent (e.g., `financial-analyst-showcase`). The prober adds a randomized UUID suffix to prevent naming collisions.
@@ -163,7 +194,7 @@ Refer to the individual README files in each folder for specific prerequisites (
 3.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
     *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
     *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
-    *   Chat interactively: `./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent`
+    *   Chat interactively: keep an agent, then attach — `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --keep-agent` then `./venv/bin/python3 agent_templates/chat.py --agent <agent-id>`
 4.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/app_developer/README.md)
     *   *Turns a request into tested code on GitHub: builds a new app and creates+pushes a new repo (greenfield), or implements a feature in an existing repo and opens a PR (feature). Verifies tests in the sandbox before publishing, via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT — classic `repo` scope covers both modes); nothing to host.*
     *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --list-tools`

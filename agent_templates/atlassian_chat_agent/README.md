@@ -76,7 +76,7 @@ Two independent credentials are in play:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Dev as prober.py / chat.py (you)
+    participant Dev as prober.py (you)
     participant CP as Control Plane (GCP REST)
     participant DP as Interactions API (Data Plane)
     participant MCP as Atlassian Rovo MCP (mcp.atlassian.com)
@@ -133,8 +133,8 @@ ATLASSIAN_EMAIL="you@example.com"
 ATLASSIAN_API_TOKEN="your_api_token"
 ATLASSIAN_SITE="https://your-site.atlassian.net"
 ```
-Both `prober.py` and `chat.py` **auto-load this template's `.env`**, so you don't
-need to source it manually (shell-exported vars still take precedence).
+`prober.py` **auto-loads this template's `.env`**, so you don't need to source it
+manually (shell-exported vars still take precedence).
 
 ### 4. Install dependencies
 ```bash
@@ -146,8 +146,7 @@ python3 -m venv venv
 
 ## Run it
 
-Commands below run from the repo root using the repo's venv. Both `prober.py`
-and `chat.py` live in `agent_templates/` and work with any template.
+Commands below run from the repo root using the repo's venv.
 
 ### Preflight — verify the token + MCP connectivity (no model call)
 ```bash
@@ -166,12 +165,10 @@ deletes it. Add an ad-hoc prompt to override the examples, or `--keep-agent` to
 keep the agent (it prints the id) so you can chat with it.
 
 ### Interactive, multi-turn chat
-Provision from the template and chat in one command:
+First keep an agent with `prober … --keep-agent` (it prints the id), then attach
+to it — `chat.py` is a thin client and does not provision agents itself:
 ```bash
-./venv/bin/python3 agent_templates/chat.py --from-template agent_templates/atlassian_chat_agent --project YOUR_PROJECT
-```
-Or attach to an agent you kept earlier (`prober … --keep-agent` prints the id):
-```bash
+./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --keep-agent --project YOUR_PROJECT
 ./venv/bin/python3 agent_templates/chat.py --agent <agent-id> --project YOUR_PROJECT
 ```
 Each turn is chained with `previous_interaction_id`, so the agent remembers the
@@ -192,9 +189,6 @@ you > Create a Confluence page in the TEAM space summarizing this conversation.
 | prober | `--check` / `--list-tools` | MCP connectivity/token preflight, then exit. |
 | prober | `--keep-agent` | Keep the agent after running and print its id. |
 | chat | `--agent <id\|resource>` | Chat with an existing (self-contained) agent. |
-| chat | `--from-template DIR` | Register a self-contained agent from a template, chat, then delete on exit. |
-| chat | `--keep-agent` | With `--from-template`: keep the agent after exit. |
-| chat | `--mcp-url URL` | Override a single MCP server URL for `--from-template`. |
 | chat | `--no-stream` | Disable token streaming. |
 
 > MCP auth is declared **per server** in `agent.yaml` (`mcp_servers[].auth`) and
@@ -262,8 +256,7 @@ clients that manage per-user tokens, but a unified app can't do that.
   via `getAccessibleAtlassianResources`).
 - **Empty results:** the account simply has no matching data, or your JQL/CQL is
   too narrow.
-- **`invalid model` / interaction errors:** pick a current model in `agent.yaml`
-  or via `--base-agent`.
+- **`invalid model` / interaction errors:** pick a current model in `agent.yaml`.
 - **Only 3 tools listed (`getTeamworkGraph*`) in `--list-tools`:** your token is
   a **classic (unscoped)** API token. Rovo MCP maps each Jira/Confluence tool to
   required scopes, so you need an **API token _with scopes_** — create one via
