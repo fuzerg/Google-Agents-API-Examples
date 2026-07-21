@@ -11,14 +11,6 @@ environment:
     allowlist:     
       - domain: "*"
 
-mcp_servers:
-  - name: github
-    url: https://api.githubcopilot.com/mcp/
-    enabled: true
-    auth:
-      headers:
-        Authorization: "Bearer ${GITHUB_TOKEN}"
-        X-MCP-Toolsets: "repos,pull_requests"
 
 x-output-mount: "/workspace/output"
 
@@ -26,4 +18,4 @@ x-output-mount: "/workspace/output"
 
 examples:
   - title: "Create NextJS App"
-    prompt: "I want to build a new full-stack Next.js dashboard. Because /workspace/output is a GCSFuse mount that lacks mmap support (which breaks npm and git), you MUST initialize the project in a local directory like /workspace/local-temp/dashboard. Run this exact command: `mkdir -p /workspace/local-temp/dashboard && cd /workspace/local-temp/dashboard && npx -y create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --yes --disable-git --skip-install`. Once scaffolding is done, verify the app works by running `. ~/.nvm/nvm.sh && nvm use 20 && npm install` followed by `npm run build` and `npm run lint`. Do not push broken code! Once the build succeeds, initialize git manually from that directory (`git init && git config user.name 'Agent' && git config user.email 'agent@test.com' && git checkout -b master && git add . && git commit -m 'init'`), and push it to https://${GITHUB_TOKEN}@github.com/ayushiagarwal11-eng/agent-dashboard-test.git using `git push --force origin master` so it overwrites any previous tests. Finally, run `rsync -a --exclude node_modules --exclude .git /workspace/local-temp/dashboard/ /workspace/output/dashboard/` so the code persists."
+    prompt: "I want to build a new full-stack Next.js dashboard. Because /workspace/output is a GCSFuse mount that lacks mmap support (which breaks npm and git), you MUST initialize the project in a local directory like /workspace/local-temp/dashboard. Run this exact command: `export CI=1 && mkdir -p /workspace/local-temp/dashboard && cd /workspace/local-temp/dashboard && npx -y create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --use-npm --yes --disable-git --skip-install`. Once scaffolding is done, verify the app works by running `export CI=1 && . ~/.nvm/nvm.sh && nvm use 20 && npm install --no-audit --no-fund` followed by `npm run build` and `npm run lint`. Do not push broken code! Once the build succeeds, initialize git manually from that directory (`git init && git config user.name 'Agent' && git config user.email 'agent@test.com' && git checkout -b master && git add . && git commit -m 'init'`), and push it to https://${GITHUB_TOKEN}@github.com/ayushiagarwal11-eng/agent-dashboard-test.git using `git push --force origin master` so it overwrites any previous tests. Finally, run `rsync -a --exclude node_modules --exclude .git /workspace/local-temp/dashboard/ /workspace/output/dashboard/` so the code persists."
