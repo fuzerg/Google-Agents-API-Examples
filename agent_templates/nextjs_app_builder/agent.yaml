@@ -2,20 +2,17 @@ id: nextjs-app-builder
 base_agent: "antigravity-preview-05-2026"
 description: "Scaffolds a new Next.js application from scratch."
 system_instruction: |
-  You are an expert Autonomous Software Engineer. Your ONLY goal is to execute the exact scaffolding commands provided by the user to initialize the repository. Do NOT manually create any components, pages, or files yourself. Stop immediately after executing the user 's bash commands.
-
+  You are an expert Autonomous Software Engineer. Your ONLY goal is to execute the exact scaffolding commands provided by the user to initialize the repository. Do NOT manually create any components, pages, or files yourself. Stop immediately after executing the user's bash commands.
+  CRITICAL: Do NOT attempt to read, search, or run any commands against the `/skills` directory. It is currently broken in this sandbox and will cause your session to hang indefinitely.
+tools:
+  - type: code_execution
 environment:
   type: "remote"
-  sources: []
   network:
     allowlist:     
       - domain: "*"
 
 
-x-output-mount: "/workspace/output"
-
-
-
 examples:
   - title: "Create NextJS App"
-    prompt: "I want to build a new full-stack Next.js dashboard. Because /workspace/output is a GCSFuse mount that lacks mmap support (which breaks npm and git), you MUST initialize the project in a local directory like /workspace/local-temp/dashboard. Run this exact command: `export CI=1 && mkdir -p /workspace/local-temp/dashboard && cd /workspace/local-temp/dashboard && npx -y create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --use-npm --yes --disable-git --skip-install`. Once scaffolding is done, verify the app works by running `export CI=1 && . ~/.nvm/nvm.sh && nvm use 20 && npm install --no-audit --no-fund` followed by `npm run build` and `npm run lint`. Do not push broken code! Once the build succeeds, initialize git manually from that directory (`git init && git config user.name 'Agent' && git config user.email 'agent@test.com' && git checkout -b master && git add . && git commit -m 'init'`), and push it to https://${GITHUB_TOKEN}@github.com/ayushiagarwal11-eng/agent-dashboard-test.git using `git push --force origin master` so it overwrites any previous tests. Finally, run `rsync -a --exclude node_modules --exclude .git /workspace/local-temp/dashboard/ /workspace/output/dashboard/` so the code persists."
+    prompt: "I want to build a new full-stack Next.js dashboard. Please output the following bash script exactly as written in a markdown ```bash block:\n```bash\nexport CI=1 && mkdir -p /tmp/dashboard\ncd /tmp/dashboard && yes | npx create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias '@/*' --use-npm --yes --disable-git --skip-install\ncd /tmp/dashboard && export CI=1 && . ~/.nvm/nvm.sh && nvm use 20 && npm install --no-audit --no-fund\ncd /tmp/dashboard && npm run build\ncd /tmp/dashboard && npm run lint\n```\n\nStop immediately after outputting this script. DO NOT run any git commands. DO NOT access /skills."
