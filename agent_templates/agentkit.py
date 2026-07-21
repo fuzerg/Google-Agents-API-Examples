@@ -555,6 +555,9 @@ def agent_resource_name(agent: str, project: str, location: str = LOCATION) -> s
 # ---------------------------------------------------------------------------
 class SimpleRenderer:
     """Plain renderer: prints text and code-execution results inline."""
+    
+    def __init__(self) -> None:
+        self.text_buffer = ""
 
     def handle_event(self, event: Any) -> None:
         if getattr(event, "event_type", None) != "step.delta":
@@ -567,6 +570,11 @@ class SimpleRenderer:
             text = getattr(delta, "text", "") or ""
             if text:
                 print(text, end="", flush=True)
+                self.text_buffer += text
+        elif dtype == "tool_call":
+            name = getattr(delta, "name", "?")
+            args = getattr(delta, "arguments", {})
+            print(f"\n--> Executing Tool: {name} with args: {args}\n", flush=True)
         elif dtype == "code_execution_result":
             result = getattr(delta, "result", "") or ""
             if result:
@@ -574,6 +582,11 @@ class SimpleRenderer:
 
     def finish(self) -> None:
         print()
+        import re, subprocess
+        matches = re.findall(r"```bash\n(.*?)\n```", self.text_buffer, re.DOTALL)
+        for cmd in matches:
+            print(f"\n--> [Local Execution Extracted Bash]\n{cmd}\n")
+            subprocess.run(cmd, shell=True, cwd="/tmp")
 
 
 class RichRenderer:
@@ -594,7 +607,7 @@ class RichRenderer:
         if delta is None:
             return
         dtype = getattr(delta, "type", None)
-
+        print(f"\n[DEBUG DELTA] {dtype}: {delta}\n", flush=True)
         if dtype == "text":
             text = getattr(delta, "text", "") or ""
             if text:
@@ -617,6 +630,10 @@ class RichRenderer:
         elif dtype == "mcp_server_tool_result":
             self._break_text()
             print(c("  \u2190 tool result received", C.BLUE))
+        elif dtype == "tool_call":
+            name = getattr(delta, "name", "?")
+            args = getattr(delta, "arguments", {})
+            print(f"\n--> Executing Tool: {name} with args: {args}\n", flush=True)
         elif dtype == "code_execution_result":
             result = getattr(delta, "result", "") or ""
             if result:

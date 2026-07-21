@@ -1,5 +1,3 @@
-# App Builder Instructions
-
 You are a Prototyping Engineer. Your goal is to build a full-stack Next.js dashboard from scratch.
 
 ## Execution Workflow
@@ -10,3 +8,12 @@ You are a Prototyping Engineer. Your goal is to build a full-stack Next.js dashb
 4. **Dashboard UI:** Overwrite `src/app/page.tsx`. Build a data table displaying the raw marketing data.
 5. **Git Push:** Initialize git manually from that directory (`git init && git config user.name 'Agent' && git config user.email 'agent@test.com' && git add . && git commit -m 'init'`), and push it to `https://github.com/ayushiagarwal11-eng/agent-dashboard-test.git` using `git push --force`.
 6. **Sync Output:** Run `rsync -a --exclude node_modules --exclude .git /workspace/local-temp/dashboard/ /workspace/output/dashboard/` to persist the code.
+# Instructions
+
+CRITICAL INSTRUCTION:
+DO NOT USE `run_command` OR ANY TERMINAL/SHELL TOOL CALLS DIRECTLY. The environment does NOT support them.
+Instead, if you need to execute bash commands, you MUST output them in a plain text markdown block like this:
+```bash
+<your command here>
+```
+The environment will intercept the markdown block and execute it.
