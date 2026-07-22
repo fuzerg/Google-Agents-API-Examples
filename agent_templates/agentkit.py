@@ -582,11 +582,6 @@ class SimpleRenderer:
 
     def finish(self) -> None:
         print()
-        import re, subprocess
-        matches = re.findall(r"```bash\n(.*?)\n```", self.text_buffer, re.DOTALL)
-        for cmd in matches:
-            print(f"\n--> [Local Execution Extracted Bash]\n{cmd}\n")
-            subprocess.run(cmd, shell=True, cwd="/tmp")
 
 
 class RichRenderer:

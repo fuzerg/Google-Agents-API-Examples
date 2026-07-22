@@ -2,7 +2,6 @@ id: phase-3-feature-developer
 base_agent: antigravity-preview-05-2026
 description: "Implements new features by reading Jira tickets and opening Pull Requests."
 tools:
-  - type: code_execution
 environment:
   type: "remote"
   network:

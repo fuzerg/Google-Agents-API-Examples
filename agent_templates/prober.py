@@ -183,11 +183,32 @@ def run_examples(client, agent_resource, template_dir, config, agent_id,
         ak.rule(f"[{i + 1}/{len(examples)}] {title}")
         print(f"Prompt: {prompt}\n")
         try:
-            final_text, _ = ak.stream_interaction(
-                client, agent_resource, prompt,
-                environment=interaction_environment,
-                renderer=ak.SimpleRenderer(),
-            )
+            iid = None
+            current_prompt = prompt
+            while True:
+                final_text, iid = ak.stream_interaction(
+                    client, agent_resource, current_prompt,
+                    previous_interaction_id=iid,
+                    environment=interaction_environment,
+                    renderer=ak.SimpleRenderer(),
+                )
+                
+                # Check for bash blocks
+                matches = re.findall(r"```bash\n(.*?)\n```", final_text, re.DOTALL)
+                if not matches:
+                    break  # No bash blocks, agent is done with this turn
+                
+                current_prompt = "\n[SYSTEM NOTIFICATION: The bash block you generated was executed on the local environment.]\n"
+                for cmd in matches:
+                    print(f"\n--> [Local Execution Extracted Bash]\n{cmd}\n")
+                    res = subprocess.run(cmd, shell=True, cwd="/tmp", capture_output=True, text=True)
+                    stdout_str = res.stdout[-2000:] if len(res.stdout) > 2000 else res.stdout
+                    stderr_str = res.stderr[-2000:] if len(res.stderr) > 2000 else res.stderr
+                    current_prompt += f"Command:\n{cmd}\n\nExit code: {res.returncode}\nStdout (truncated to 2000 chars):\n{stdout_str}\nStderr (truncated to 2000 chars):\n{stderr_str}\n\n"
+                
+                print(f"Feeding command output back to agent...\n")
+                current_prompt += "[SYSTEM INSTRUCTION: Analyze the above results. If successful, proceed to the next step of the prompt. DO NOT repeat the same bash block.]"
+            
             print(f"\nInteraction {i + 1} finished successfully.")
 
             if output_mount and example_gcs_output:
