@@ -25,11 +25,16 @@ If a library like `fpdf` or `reportlab` is not installed in the sandbox, you can
 
 ```python
 import os
+from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
-output_path = "/workspace/output/financial_report.pdf"
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
+# Use a UNIQUE filename per report so you never overwrite a previous session's
+# output (the output directory is shared across all sessions of this agent).
+# Derive it from the subject/ticker and a timestamp.
+os.makedirs("/workspace/output", exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+output_path = f"/workspace/output/goog_report_{timestamp}.pdf"
 
 # Example using Matplotlib to create a creative PDF
 with PdfPages(output_path) as pdf:
@@ -55,3 +60,4 @@ print(f"PDF report successfully saved to {output_path}")
 ### Critical Rules
 1. **Be Creative**: Your PDF should not be just a wall of text. Include charts, formatted text, summary metrics, and a polished layout.
 2. **Deep Analysis**: Base your analysis on multiple data points over time, not just the current price.
+3. **Unique filenames**: Save every report under a unique, descriptive name in `/workspace/output/` (e.g. include the ticker and a timestamp). Never reuse a fixed name like `financial_report.pdf` — the directory is shared across sessions and a fixed name overwrites earlier reports.

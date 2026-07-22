@@ -16,7 +16,9 @@ mcp_servers:
       headers:
         Authorization: "Basic ${base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}"
 
-x-output-mount: "/workspace/output"
+x-output-mount:
+  target: "/workspace/output"
+  bucket: "gs://${GCS_BUCKET}/nextjs_feature_developer/output"
 
 examples:
   - title: "Read Ticket"

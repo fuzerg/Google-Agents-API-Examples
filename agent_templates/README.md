@@ -51,7 +51,7 @@ and live next to `agentkit.py`; each entrypoint stays thin:
 
 ## Unified `agent.yaml` Configuration
 
-Each showcase template relies on a declarative `agent.yaml` file that defines the agent's properties, tools, runtime environment, and test examples. The `prober.py` script automatically parses this file and uses it to provision the agent in the cloud.
+Each template's `agent.yaml` declares the agent's properties, tools, runtime environment, and test examples; `prober.py` parses it to provision the agent.
 
 ### Environment Variables & `.env`
 
@@ -68,14 +68,9 @@ template, env vars are resolved in two steps:
     `.env.example`; copy it to `.env` and fill in your values (`.env` is git-ignored).
 2.  **`${VAR}` expansion.** The raw YAML text is expanded *before* it is parsed, so
     `${VAR}` / `$VAR` anywhere in the file is substituted with the corresponding
-    environment value — e.g. `source: gs://${GCS_BUCKET}/financial_analyst`. An
-    **unset** variable is left **literally in place** (e.g. `${MISSING}`) rather than
-    raising, so double-check spelling for optional fields.
-
-`prober.py` also sets a couple of variables for you before expansion:
-*   **`GCS_BUCKET`** — defaults to `<project>-agent-skills` (override with the
-    `GCS_BUCKET_NAME` env var); referenced by skill `source:` mounts.
-*   **`MCP_SERVER_URL`** — normalized to end in `/sse` for self-hosted MCP templates.
+    environment value — e.g. `source: gs://${GCS_BUCKET}/financial_analyst/skills`.
+    An **unset** variable is left **literally in place** (e.g. `${MISSING}`) rather
+    than raising, so double-check spelling for optional fields.
 
 > **Note:** values inside an `mcp_servers[].auth.headers` block use a *stricter*
 > interpolation than the whole-file pass above: it additionally supports the
@@ -95,9 +90,20 @@ Configures the sandbox runtime in which the agent executes its tools (like `code
 *   **`type`**: Usually set to `"remote"` to denote execution on cloud servers.
 *   **`sources`**: A list of external data sources to mount into the agent's execution environment.
     *   `type`: e.g., `"gcs"` for Google Cloud Storage.
-    *   `source`: The remote path (e.g., `gs://${GCS_BUCKET}/financial_analyst`).
-    *   `target`: The absolute path where the source will be mounted inside the agent's environment (e.g., `/.agents/skills/financial_analyst`).
+    *   `source`: The remote path that is mounted.
+    *   `target`: The absolute path where the source is mounted inside the agent.
+    *   `x-upload-from` *(optional, prober-only)*: A local directory (relative to the template) that `prober.py` **mirrors** to `source` before registering the agent (via `gcloud storage rsync`, creating the bucket if needed). Omit it when `source` already exists in GCS (user-managed).
 *   **`network.allowlist`**: Defines network access rules for the sandbox. Example: `- domain: "*"` allows unrestricted outbound internet access.
+
+```yaml
+environment:
+  type: "remote"
+  sources:
+    - type: "gcs"
+      source: "gs://${GCS_BUCKET}/financial_analyst/skills"  # mount + upload dest
+      target: "/.agents/skills"                               # -> /.agents/skills/<name>/...
+      x-upload-from: "skills"                                 # local folder prober mirrors to `source`
+```
 
 ### Remote MCP Servers (`mcp_servers`)
 Connects the agent to one or more remote [MCP](https://modelcontextprotocol.io) servers. Each entry is turned into an `mcp_server` tool and baked into the agent, so the model can call the server's tools.
@@ -138,8 +144,18 @@ convention of this repo's runners (parsed by `agentkit`); it simply populates th
 standard `mcp_server` tool `headers` field.
 
 ### Custom Prober Extensions (`x-` prefixed)
-These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate advanced local/remote testing workflows.
-*   **`x-output-mount`**: Specifies an absolute path inside the agent's sandbox (e.g., `/workspace/output`) where generated files (like PDFs or charts) will be saved. `prober.py` dynamically creates a unique GCS bucket folder for each example, maps it to this target during execution, and then automatically syncs all generated files back to your local workspace (`output_{example_title}`) when the interaction completes.
+These fields are not part of the standard Agent API payload but are used by `prober.py` to orchestrate local/remote testing workflows. (`x-upload-from` on a source, covered above, is another.)
+*   **`x-output-mount`**: Declares a writable output location for generated files (PDFs, charts, etc.). It is an object with two keys:
+    *   `target`: the absolute path inside the sandbox the agent writes to (e.g. `/workspace/output`).
+    *   `bucket`: the base GCS path you own (e.g. `gs://${GCS_BUCKET}/financial_analyst/output`).
+
+    `prober.py` bakes a per-agent, run-unique output source — `{bucket}/{agent_id}` — into the agent's **`base_environment`** at registration and mounts it at `target`. Because it lives in the agent (not a per-interaction override), **every** session of that agent writes there — including later interactive sessions via `chat.py`. All those sessions share the one `{bucket}/{agent_id}` prefix, so instruct the agent (in `AGENTS.md`) to use **distinct output filenames** and avoid overwriting. After the examples finish, `prober.py` downloads `{bucket}/{agent_id}/*` into a local `output/` directory next to the template.
+
+    ```yaml
+    x-output-mount:
+      target: "/workspace/output"
+      bucket: "gs://${GCS_BUCKET}/financial_analyst/output"
+    ```
 
 ### Test Cases (`examples`)
 *   **`examples`**: A list of test iterations the prober will run sequentially.
@@ -167,9 +183,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set the target project ID in your terminal session:
+Set the target project ID in your terminal session (or pass `--project` to `prober.py`):
 ```bash
-export GCP_PROJECT="your-gcp-project-id-here"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id-here"
 ```
 
 ---
@@ -183,18 +199,18 @@ All examples are executed via the unified `prober.py` script from the `agent_tem
 
 Refer to the individual README files in each folder for specific prerequisites (such as API tokens or hosting helper servers) before running:
 
-1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/financial_analyst/README.md)
+1.  **Smart Financial Analyst**: [financial_analyst/README.md](financial_analyst/README.md)
     *   *Requires GCS skill mounting.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/financial_analyst`
-2.  **GitHub Code Optimizer (Remote MCP)**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/github_code_optimizer/README.md)
+2.  **GitHub Code Optimizer (Remote MCP)**: [github_code_optimizer/README.md](github_code_optimizer/README.md)
     *   *Benchmarks in the sandbox and performs all GitHub operations via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT); nothing to host.*
     *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer --list-tools`
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer`
-3.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
+3.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](atlassian_chat_agent/README.md)
     *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
     *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
     *   Chat interactively: keep an agent, then attach — `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --keep-agent` then `./venv/bin/python3 agent_templates/chat.py --agent <agent-id>`
-4.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/app_developer/README.md)
+4.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](app_developer/README.md)
     *   *Turns a request into tested code on GitHub: builds a new app and creates+pushes a new repo (greenfield), or implements a feature in an existing repo and opens a PR (feature). Verifies tests in the sandbox before publishing, via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT — classic `repo` scope covers both modes); nothing to host.*
     *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --list-tools`
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer`
