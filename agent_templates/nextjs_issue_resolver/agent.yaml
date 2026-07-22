@@ -17,7 +17,9 @@ mcp_servers:
         Authorization: "Bearer ${GITHUB_TOKEN}"
         X-MCP-Toolsets: "repos,pull_requests"
 
-x-output-mount: "/workspace/output"
+x-output-mount:
+  target: "/workspace/output"
+  bucket: "gs://${GCS_BUCKET}/nextjs_issue_resolver/output"
 
 examples:
   - title: "Resolve Issue and Add Tests"

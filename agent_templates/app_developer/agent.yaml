@@ -41,15 +41,17 @@ mcp_servers:
         Authorization: "Bearer ${GITHUB_TOKEN}"
         X-MCP-Toolsets: "repos,pull_requests"
 
-# A local `skills/` directory is uploaded to GCS by prober.py and mounted into the
-# agent's sandbox at `target`. The `playwright_visual_testing` skill gives the
-# agent optional guidance for headless browser / visual verification of UI apps.
+# prober.py mirrors the whole local `skills/` folder to `source` (see
+# `x-upload-from`) and mounts it at `target`, so the agent sees
+# `/.agents/skills/playwright_visual_testing/...`. That skill gives the agent
+# optional guidance for headless browser / visual verification of UI apps.
 environment:
   type: "remote"
   sources:
     - type: "gcs"
-      source: "gs://${GCS_BUCKET}/playwright_visual_testing"
-      target: "/.agents/skills/playwright_visual_testing"
+      source: "gs://${GCS_BUCKET}/app_developer/skills"
+      target: "/.agents/skills"
+      x-upload-from: "skills"
   network:
     allowlist:
       - domain: "*"

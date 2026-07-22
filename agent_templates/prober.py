@@ -33,7 +33,6 @@ Usage:
 import argparse
 import copy
 import os
-import re
 import subprocess
 import sys
 import time
@@ -99,13 +98,15 @@ def assemble_tools(config):
     return tools, servers
 
 
-def upload_skills(template_dir, gcs_bucket):
-    """Upload the template's local skills/ directory to GCS (skills templates)."""
-    local_skills_dir = os.path.join(template_dir, "skills")
-    if not os.path.exists(local_skills_dir):
-        return
+def _bucket_url(gcs_uri):
+    """`gs://bucket/path/...` -> `gs://bucket` (the bucket root)."""
+    rest = gcs_uri[len("gs://"):] if gcs_uri.startswith("gs://") else gcs_uri
+    return "gs://" + rest.split("/", 1)[0]
 
-    bucket_url = f"gs://{gcs_bucket}"
+
+def _ensure_bucket(gcs_uri):
+    """Create the bucket that backs `gcs_uri` if it does not already exist."""
+    bucket_url = _bucket_url(gcs_uri)
     exists = subprocess.run(
         ["gcloud", "storage", "buckets", "describe", bucket_url],
         capture_output=True,
@@ -116,68 +117,99 @@ def upload_skills(template_dir, gcs_bucket):
             ["gcloud", "storage", "buckets", "create", bucket_url, "--location=us"],
             check=True,
         )
-    for skill_name in os.listdir(local_skills_dir):
-        skill_path = os.path.join(local_skills_dir, skill_name)
-        if os.path.isdir(skill_path):
-            print(f"Uploading skill files from '{skill_path}' to {bucket_url}/...")
-            subprocess.run(
-                ["gcloud", "storage", "cp", "-r", skill_path, f"{bucket_url}/"],
-                check=True,
-            )
 
 
-def run_examples(client, agent_resource, template_dir, config, agent_id,
-                 gcs_bucket, env_config, prompt_override):
-    """Run each example as a single-turn streaming interaction (+ x-* handling)."""
-    if prompt_override:
-        examples = [{"title": "manual_run", "prompt": prompt_override}]
+def _require_resolved_gs(uri, what):
+    """Fail clearly if `uri` is not a fully-resolved gs:// path."""
+    if not isinstance(uri, str) or not uri.startswith("gs://") or "${" in uri:
+        sys.exit(
+            f"{what} must be a resolved gs:// path, got: {uri!r}. If it references "
+            f"an env var (e.g. ${{GCS_BUCKET}}), set that variable in your shell or "
+            f"the template's .env."
+        )
+
+
+def maybe_upload_local_data(template_dir, env_config):
+    """Mirror each source's `x-upload-from` local dir to its GCS `source`.
+
+    Every `environment.sources` entry may declare `x-upload-from: <dir>` (a path
+    relative to the template dir). prober mirrors that directory to the entry's
+    `source` (creating the bucket if needed) using `rsync`, so the GCS copy is an
+    exact mirror of the local files (no stale leftovers). `x-upload-from` is a
+    prober-only field; `strip_prober_source_keys` removes it before registration.
+    """
+    for src in env_config.get("sources", []) or []:
+        if src.get("type") != "gcs":
+            continue
+        upload_from = src.get("x-upload-from")
+        if not upload_from:
+            continue
+        dest = src.get("source", "")
+        _require_resolved_gs(dest, f"source for x-upload-from '{upload_from}'")
+        local = os.path.join(template_dir, upload_from)
+        if not os.path.isdir(local):
+            sys.exit(f"x-upload-from points to a missing directory: {local}")
+        _ensure_bucket(dest)
+        print(f"Uploading '{local}' -> {dest} ...")
+        subprocess.run(
+            ["gcloud", "storage", "rsync", "-r",
+             "--delete-unmatched-destination-objects", local, dest],
+            check=True,
+        )
+
+
+def strip_prober_source_keys(env_config):
+    """Drop prober-only keys from sources so the payload is API-clean."""
+    for src in env_config.get("sources", []) or []:
+        src.pop("x-upload-from", None)
+
+
+def resolve_output(config):
+    """Return (target, bucket) from `x-output-mount`, or (None, None).
+
+    `x-output-mount` is an object:
+        x-output-mount:
+          target: /workspace/output          # sandbox mount point
+          bucket: gs://.../output             # base; prober appends /{agent_id}
+    """
+    out = config.get("x-output-mount")
+    if not out:
+        return None, None
+    if not isinstance(out, dict):
+        sys.exit("x-output-mount must be a mapping with `target` and `bucket`.")
+    target, bucket = out.get("target"), out.get("bucket")
+    if not target or not bucket:
+        sys.exit("x-output-mount requires both `target` and `bucket`.")
+    _require_resolved_gs(bucket, "x-output-mount.bucket")
+    return target, bucket
+
+
+def download_output(output_source, template_dir, output_target):
+    """Download the agent's output GCS prefix to a local directory.
+
+    All sessions of the agent write to `output_source` (`{bucket}/{agent_id}`)
+    with distinct filenames (AGENTS.md instructs the agent not to overwrite), so a
+    single download collects every session's files.
+    """
+    target_name = os.path.basename(output_target.rstrip("/"))
+    local_output_dir = os.path.join(template_dir, target_name)
+    os.makedirs(local_output_dir, exist_ok=True)
+    print(f"\nDownloading output files from {output_source}/* ...")
+    time.sleep(3)
+    res = subprocess.run(
+        ["gcloud", "storage", "cp", "-r", f"{output_source}/*", local_output_dir],
+        capture_output=True, text=True,
+    )
+    if res.returncode == 0:
+        ak.ok(f"Output files saved to: {local_output_dir}")
     else:
-        examples = config.get("examples", []) or [{"title": "default_run", "prompt": "Hello"}]
+        ak.warn(f"Failed to download output files: {res.stderr}")
 
-    output_mount = config.get("x-output-mount")
 
-    for i, example in enumerate(examples):
-        prompt = example.get("prompt", "Hello")
-        title = example.get("title", f"example_{i}")
-        safe_title = re.sub(r"[^a-zA-Z0-9_-]", "_", title).lower()
-
-        # Per-interaction environment for output-mount templates.
-        interaction_environment = None
-        example_gcs_output = None
-        if output_mount:
-            example_gcs_output = f"gs://{gcs_bucket}/output_{agent_id}_{safe_title}"
-            sources = copy.deepcopy(env_config.get("sources", []))
-            sources.append({"type": "gcs", "source": example_gcs_output, "target": output_mount})
-            interaction_environment = ak.default_base_environment(
-                {**env_config, "sources": sources}
-            )
-
-        ak.rule(f"[{i + 1}/{len(examples)}] {title}")
-        print(f"Prompt: {prompt}\n")
-        try:
-            ak.stream_interaction(
-                client, agent_resource, prompt,
-                environment=interaction_environment,
-                renderer=ak.SimpleRenderer(),
-            )
-            print(f"\nInteraction {i + 1} finished successfully.")
-
-            if output_mount and example_gcs_output:
-                target_name = os.path.basename(output_mount.rstrip("/"))
-                local_output_dir = os.path.join(template_dir, f"{target_name}_{safe_title}")
-                os.makedirs(local_output_dir, exist_ok=True)
-                print(f"\nDownloading output files from {example_gcs_output}/* ...")
-                time.sleep(3)
-                res = subprocess.run(
-                    ["gcloud", "storage", "cp", "-r", f"{example_gcs_output}/*", local_output_dir],
-                    capture_output=True, text=True,
-                )
-                if res.returncode == 0:
-                    ak.ok(f"Output files saved to: {local_output_dir}")
-                else:
-                    ak.warn(f"Failed to download output files: {res.stderr}")
-        except Exception as e:  # noqa: BLE001
-            ak.err(f"An error occurred during interaction {i + 1}: {e}")
+def resolve_examples(config, prompt_override):
+    if prompt_override:
+        return [{"title": "manual_run", "prompt": prompt_override}]
+    return config.get("examples", []) or [{"title": "default_run", "prompt": "Hello"}]
 
 
 def main() -> int:
@@ -193,7 +225,7 @@ def main() -> int:
         good = ak.preflight_mcp(servers)
         return 0 if good else 2
 
-    # Auth + project + client.
+    # Auth + project.
     try:
         credentials, adc_project = ak.resolve_adc()
         token = ak.access_token(credentials)
@@ -206,28 +238,36 @@ def main() -> int:
         return 1
     print(f"Using GCP Project: {project_id}")
 
-    gcs_bucket = os.environ.get("GCS_BUCKET_NAME", f"{project_id}-agent-skills")
-    os.environ["GCS_BUCKET"] = gcs_bucket
-    # Re-expand config now that GCS_BUCKET is set (sources reference it).
-    _, config = load_template(args.template_dir)
     tools, servers = assemble_tools(config)
-
-    system_instruction = config.get("instructions")
-    system_instruction = ak.load_system_instruction(template_dir) or system_instruction
-
-    agent_id = f"{config.get('id')}-{uuid.uuid4().hex[:8]}"
+    system_instruction = ak.load_system_instruction(template_dir) or config.get("instructions")
     base_agent = config.get("base_agent", ak.DEFAULT_BASE_AGENT)
     description = config.get("description", "")
     env_config = config.get("environment", {}) or {}
 
-    # Upload skills to GCS if the template has a skills/ dir.
-    upload_skills(template_dir, gcs_bucket)
+    # Handle x-upload-from
+    maybe_upload_local_data(template_dir, env_config)
+    strip_prober_source_keys(env_config)
 
-    # Control Plane: register the self-contained agent (tools baked in).
-    base_environment = ak.default_base_environment(env_config, allow_network=bool(servers))
-    print(f"Registering agent '{agent_id}' via Control Plane...")
+    output_target, output_bucket = resolve_output(config)
+    examples = resolve_examples(config, args.prompt)
+
     try:
         client, project_id = ak.init_genai_client(project=project_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"Failed to init Gen AI client: {e}")
+        return 1
+
+    agent_id = f"{config.get('id')}-{uuid.uuid4().hex[:8]}"
+    output_source = None
+    if output_bucket:
+        output_source = f"{output_bucket.rstrip('/')}/{agent_id}"
+        sources = copy.deepcopy(env_config.get("sources", []) or [])
+        sources.append({"type": "gcs", "source": output_source, "target": output_target})
+        env_config = {**env_config, "sources": sources}
+    base_environment = ak.default_base_environment(env_config, allow_network=bool(servers))
+
+    print(f"Registering agent '{agent_id}' via Control Plane...")
+    try:
         agent_resource = ak.register_agent(
             project=project_id, token=token, agent_id=agent_id,
             base_agent=base_agent, description=description,
@@ -239,14 +279,28 @@ def main() -> int:
         print(f"Failed to register agent: {e}")
         return 1
 
-    # Data Plane: run examples, then clean up (unless --keep-agent).
+    # Data Plane: run every example against the one agent, then clean up.
     try:
-        run_examples(client, agent_resource, template_dir, config, agent_id,
-                     gcs_bucket, env_config, args.prompt)
+        for i, example in enumerate(examples):
+            ak.rule(f"[{i + 1}/{len(examples)}] {example.get('title', f'example_{i}')}")
+            print(f"Prompt: {example.get('prompt', 'Hello')}\n")
+            try:
+                ak.stream_interaction(
+                    client, agent_resource, example.get("prompt", "Hello"),
+                    renderer=ak.SimpleRenderer(),
+                )
+                print(f"\nInteraction {i + 1} finished successfully.")
+            except Exception as e:  # noqa: BLE001
+                ak.err(f"An error occurred during interaction {i + 1}: {e}")
+
+        if output_source:
+            download_output(output_source, template_dir, output_target)
     finally:
         if args.keep_agent:
             ak.rule("Agent kept")
             ak.ok(f"Agent id: {agent_id}")
+            if output_source:
+                print(f"Output prefix:  {output_source}")
             print(f"Chat with it:  chat.py --agent {agent_id} --project {project_id}")
         else:
             print(f"\nCleaning up: deleting agent '{agent_id}'...")

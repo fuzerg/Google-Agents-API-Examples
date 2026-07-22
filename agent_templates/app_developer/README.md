@@ -134,6 +134,14 @@ export GITHUB_TOKEN="github_pat_your_token_value_here"
 ```
 > Never commit a real token.
 
+### 3b. Set a GCS bucket for the bundled skill
+The whole local `skills/` folder (the `playwright_visual_testing` skill) is
+uploaded to Google Cloud Storage and mounted into the sandbox, so set
+**`GCS_BUCKET`** to a bucket you own (in your shell or this template's `.env`):
+```bash
+export GCS_BUCKET="your-gcs-bucket-name"
+```
+
 ### 4. Targets & tool scoping
 *   **Greenfield** examples create a new repo under the token's account — no
     target repo needed.

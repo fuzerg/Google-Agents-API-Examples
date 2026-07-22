@@ -8,13 +8,18 @@ environment:
   type: "remote"
   sources:
     - type: "gcs"
-      source: "gs://${GCS_BUCKET}/financial_analyst"
-      target: "/.agents/skills/financial_analyst"
+      source: "gs://${GCS_BUCKET}/financial_analyst/skills"
+      target: "/.agents/skills"
+      x-upload-from: "skills"
   network:
     allowlist:
       - domain: "*"
 
-x-output-mount: "/workspace/output"
+# prober.py dynamically mounts `{bucket}/{agent_id}` at `target` in the agent's base
+# environment, so every agent writes to its own unique prefix.
+x-output-mount:
+  target: "/workspace/output"
+  bucket: "gs://${GCS_BUCKET}/financial_analyst/output"
 
 examples:
   - title: "google"
