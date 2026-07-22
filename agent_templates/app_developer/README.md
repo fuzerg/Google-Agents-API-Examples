@@ -124,23 +124,19 @@ passes a PAT as a Bearer token. The permissions it needs depend on the mode:
 > The simplest choice that covers both modes is a classic token with the `repo`
 > scope.
 
-### 3. Provide the token
-Copy `.env.example` to `.env` and fill in the token (git-ignored), or export it in
-your shell — `prober.py` picks up either:
+### 3. Provide credentials
+Copy `.env.example` to `.env` (git-ignored) and fill in the values, or export them
+in your shell — `prober.py` picks up either. Two are needed:
+*   **`GITHUB_TOKEN`** — the PAT above, baked into the GitHub MCP server's auth header.
+*   **`GCS_BUCKET`** — a bucket you own; the whole local `skills/` folder (the
+    `playwright_visual_testing` skill) is uploaded there and mounted into the sandbox.
 ```bash
 cp agent_templates/app_developer/.env.example agent_templates/app_developer/.env
-# then edit .env, or simply:
+# then edit .env, or export directly:
 export GITHUB_TOKEN="github_pat_your_token_value_here"
-```
-> Never commit a real token.
-
-### 3b. Set a GCS bucket for the bundled skill
-The whole local `skills/` folder (the `playwright_visual_testing` skill) is
-uploaded to Google Cloud Storage and mounted into the sandbox, so set
-**`GCS_BUCKET`** to a bucket you own (in your shell or this template's `.env`):
-```bash
 export GCS_BUCKET="your-gcs-bucket-name"
 ```
+> Never commit a real token.
 
 ### 4. Targets & tool scoping
 *   **Greenfield** examples create a new repo under the token's account — no

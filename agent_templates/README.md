@@ -51,7 +51,7 @@ and live next to `agentkit.py`; each entrypoint stays thin:
 
 ## Unified `agent.yaml` Configuration
 
-Each showcase template relies on a declarative `agent.yaml` file that defines the agent's properties, tools, runtime environment, and test examples. The `prober.py` script automatically parses this file and uses it to provision the agent in the cloud.
+Each template's `agent.yaml` declares the agent's properties, tools, runtime environment, and test examples; `prober.py` parses it to provision the agent.
 
 ### Environment Variables & `.env`
 
@@ -183,9 +183,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set the target project ID in your terminal session:
+Set the target project ID in your terminal session (or pass `--project` to `prober.py`):
 ```bash
-export GCP_PROJECT="your-gcp-project-id-here"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id-here"
 ```
 
 ---
@@ -199,18 +199,18 @@ All examples are executed via the unified `prober.py` script from the `agent_tem
 
 Refer to the individual README files in each folder for specific prerequisites (such as API tokens or hosting helper servers) before running:
 
-1.  **Smart Financial Analyst**: [financial_analyst/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/financial_analyst/README.md)
+1.  **Smart Financial Analyst**: [financial_analyst/README.md](financial_analyst/README.md)
     *   *Requires GCS skill mounting.*
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/financial_analyst`
-2.  **GitHub Code Optimizer (Remote MCP)**: [github_code_optimizer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/github_code_optimizer/README.md)
+2.  **GitHub Code Optimizer (Remote MCP)**: [github_code_optimizer/README.md](github_code_optimizer/README.md)
     *   *Benchmarks in the sandbox and performs all GitHub operations via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT); nothing to host.*
     *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer --list-tools`
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/github_code_optimizer`
-3.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/atlassian_chat_agent/README.md)
+3.  **Atlassian Chat Agent (Remote MCP)**: [atlassian_chat_agent/README.md](atlassian_chat_agent/README.md)
     *   *Uses Atlassian's hosted Rovo MCP server (Jira + Confluence). Requires an Atlassian API token; nothing to host.*
     *   Run its examples: `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent`
     *   Chat interactively: keep an agent, then attach — `./venv/bin/python3 agent_templates/prober.py agent_templates/atlassian_chat_agent --keep-agent` then `./venv/bin/python3 agent_templates/chat.py --agent <agent-id>`
-4.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](file:///Users/zhaofu/workspace/interactions_api/agent_templates/app_developer/README.md)
+4.  **General-Purpose Coding Agent (Remote MCP)**: [app_developer/README.md](app_developer/README.md)
     *   *Turns a request into tested code on GitHub: builds a new app and creates+pushes a new repo (greenfield), or implements a feature in an existing repo and opens a PR (feature). Verifies tests in the sandbox before publishing, via GitHub's hosted remote MCP server. Requires a `GITHUB_TOKEN` (PAT — classic `repo` scope covers both modes); nothing to host.*
     *   Preflight the MCP server: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer --list-tools`
     *   Command: `./venv/bin/python3 agent_templates/prober.py agent_templates/app_developer`

@@ -54,7 +54,7 @@ This example demonstrates how to combine **server-side tools** (Google Search), 
 
 ## How to Run
 
-Ensure you have completed the main [setup](file:///Users/zhaofu/workspace/interactions_api/agent_templates/README.md#setup) first.
+Ensure you have completed the main [setup](../README.md#setup--prerequisites) first.
 
 This template mounts a skill and an output path to Google Cloud Storage, so set
 **`GCS_BUCKET`** to a bucket you own (skills are uploaded there and reports are

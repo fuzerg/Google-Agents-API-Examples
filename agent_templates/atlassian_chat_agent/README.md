@@ -3,10 +3,7 @@
 This showcase builds a **multi-turn** agent that talks to your **Jira** and
 **Confluence** by connecting to **Atlassian's official, fully-managed remote
 Rovo MCP Server**. The Gemini Enterprise Agent Platform routes the model's tool
-calls to `https://mcp.atlassian.com/v1/mcp`. The template-agnostic runners
-[`../prober.py`](../prober.py) (provisions the agent + runs its example prompts)
-and [`../chat.py`](../chat.py) (interactive multi-turn chat) drive it over the
-stateful **Interactions API**.
+calls to `https://mcp.atlassian.com/v1/mcp`.
 
 Your job is to enable API-token auth, create a token, and let the platform
 forward it as an `Authorization` header.
@@ -26,21 +23,6 @@ forward it as an `Authorization` header.
 | `requirements.txt` | Python dependencies. |
 | `.env.example` | Template for your Atlassian credentials (copy to `.env`; git-ignored). |
 | `demo/` | An end-to-end incident-triage demo: seeds a Confluence KB from official Kubernetes runbooks + baseline Jira bugs, then walks two use cases (file a bug from context; find the existing bug). See [demo/DEMO.md](demo/DEMO.md). |
-
-The runners live one level up and are **template-agnostic** (both share
-[`../agentkit.py`](../agentkit.py)):
-
-*   **[`../prober.py`](../prober.py)** provisions a **self-contained** agent (the
-    Rovo MCP server + your auth header baked in at registration) and runs the
-    single-turn `examples` from `agent.yaml`. Add `--check` / `--list-tools` for
-    an MCP preflight, or `--keep-agent` to keep it and print its id.
-*   **[`../chat.py`](../chat.py)** is the interactive multi-turn chat client.
-
-> **Interactions model note.** This project's Interactions API supports
-> **agent-based** interactions only. Agents are registered with a `base_agent`
-> (default `antigravity-preview-05-2026`) + a `base_environment`, and the MCP
-> server + auth header are **baked into the agent** so a thin client can then
-> chat with just `{agent, input}`.
 
 ---
 
@@ -232,14 +214,10 @@ clients that manage per-user tokens, but a unified app can't do that.
 > that one identity. For true per-user identity through a shared agent, use the
 > Rovo MCP server's **OAuth 2.1** instead of a static header.
 
-> **Tool-type note (verified against the live API):** for MCP servers the
-> Control Plane accepts tool type **`mcp_server`** (the same as the Data Plane);
-> the older `type: mcp` is rejected.
-
-> **Tool-type gotcha (verified against the live API):** for MCP servers the
-> Control Plane accepts tool type **`mcp_server`** — the same as the Data Plane.
-> The older `type: mcp` is rejected (`Unsupported tool type: mcp. Supported: [...,
-> mcp_server, ...]`).
+> **Tool-type note (verified against the live API):** for MCP servers the Control
+> Plane accepts tool type **`mcp_server`** (the same as the Data Plane). The older
+> `type: mcp` is rejected (`Unsupported tool type: mcp. Supported: [..., mcp_server,
+> ...]`).
 
 ---
 
