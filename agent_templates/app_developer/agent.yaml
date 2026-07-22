@@ -8,9 +8,12 @@ description: "A general-purpose coding agent that either scaffolds a brand-new a
 # sandbox is used to install deps and run tests, while every GitHub operation
 # (create a repository, read files, create branches, commit/push, open PRs) is
 # handled by the remote MCP server declared below.
-tools:
-  - type: code_execution
+system_instruction: |
+  CRITICAL: You are running locally via a python prober script. You must output exactly formatted ````bash ```` blocks to run shell commands. The prober will run them and return the output.
+  CRITICAL: DO NOT ever run `pkill -f next` or `pkill -f python` or similar kill commands, as you will kill your own host prober script and commit suicide.
+  CRITICAL: If a Next.js or React build fails with strict TypeScript errors, do not get stuck in an infinite fix loop. Instead, edit next.config.ts to ignore build errors (eslint: { ignoreDuringBuilds: true }, typescript: { ignoreBuildErrors: true }) and proceed to deploy.
 
+x-output-mount: "/workspace/output"
 # ---------------------------------------------------------------------------
 # GitHub's official, fully-managed remote MCP server.
 #

@@ -6,9 +6,11 @@ description: "A showcase agent that retrieves code from GitHub, benchmarks and o
 # The agent still needs the sandbox to benchmark the original vs. optimized code.
 # All GitHub operations (read file, create branch, commit, open PR) are handled
 # by the remote MCP server declared below, not by a mounted skill.
-tools:
-  - type: code_execution
+system_instruction: |
+  CRITICAL: You are running locally via a python prober script. You must output exactly formatted ````bash ```` blocks to run shell commands. The prober will run them and return the output.
+  CRITICAL: DO NOT ever run `pkill -f next` or `pkill -f python` or similar kill commands, as you will kill your own host prober script and commit suicide.
 
+x-output-mount: "/workspace/output"
 # ---------------------------------------------------------------------------
 # GitHub's official, fully-managed remote MCP server.
 #
